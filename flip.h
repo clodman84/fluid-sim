@@ -2,9 +2,9 @@
 #define FLIP_H
 #include <raylib.h>
 
-#define CELL_SIZE 100.0
-#define SIMWIDTH 8
-#define SIMHEIGHT 8
+#define CELL_SIZE 10.0
+#define SIMWIDTH 80
+#define SIMHEIGHT 80
 
 enum cell_type { AIR, FLUID };
 
@@ -20,15 +20,16 @@ typedef struct {
 } ParticleSet;
 
 typedef struct {
-  float *up;
-  float *down;
-  float *left;
-  float *right;
+  float *v_top;
+  float *v_bottom;
+  float *u_left;
+  float *u_right;
   enum cell_type type;
 } Cell;
 
 typedef struct {
-  float *grid_velocities;
+  float *u_velocities;
+  float *v_velocities;
   Cell *cells;
   int width;
   int height;

@@ -6,7 +6,7 @@
 
 #define SCREENWIDTH 800.0
 #define SCREENHEIGHT 800.0
-#define SHOWGRID 1
+#define SHOWGRID 0
 
 int main(int argc, char *argv[]) {
   InitWindow(SCREENWIDTH, SCREENHEIGHT, "Fluid Sim");
@@ -14,16 +14,16 @@ int main(int argc, char *argv[]) {
   char fps_str[10];
   float dt;
 
-  Vector2 g = {0, 9.8};
-  Rectangle rect = {200, 100, 10, 10};
+  Vector2 g = {9.8, 9.8};
+  Rectangle rect = {200, 100, CELL_SIZE / 10, CELL_SIZE / 10};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
-  fluid[0] = FLUID;
-  fluid[10] = FLUID;
-  fluid[20] = FLUID;
-  // for (int i = 0; i < SIMHEIGHT * SIMWIDTH; i++) {
-  //   fluid[i] = FLUID;
-  // }
+  // fluid[0] = FLUID;
+  // fluid[10] = FLUID;
+  // fluid[20] = FLUID;
+  for (int i = 0; i < SIMHEIGHT * SIMWIDTH; i++) {
+    fluid[i] = FLUID;
+  }
   Simulation sim = initiallise_simulation(SIMWIDTH, SIMHEIGHT, fluid);
 
   while (!WindowShouldClose()) {

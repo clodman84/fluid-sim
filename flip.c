@@ -34,7 +34,8 @@ Simulation initiallise_simulation(int width, int height,
     for (int j = 0; j < width; j++) {
       if (initial_config[i * width + j] == FLUID) {
         for (int n = 0; n < N_PARTICLES_PER_CELL; n++) {
-          Particle p = {{random_float() + i, random_float() + j}, {0, 0}};
+          Particle p = {{random_float() + i, random_float() + j},
+                        {random_float(), random_float()}};
           particles[p_index] = p;
           p_index++;
         }
@@ -71,8 +72,15 @@ Simulation initiallise_simulation(int width, int height,
   return sim;
 }
 
+void destroy_sim(Simulation *sim) {
+  free(sim->grid.cells);
+  free(sim->grid.u_velocities);
+  free(sim->grid.v_velocities);
+  free(sim->particles.data);
+}
+
 void compute(Simulation *sim, Vector2 a, float dt) {
-  float restitution = -1.;
+  float restitution = -1.0;
   Vector2 max = {SIMWIDTH, SIMHEIGHT};
   Vector2 min = {0, 0};
 
@@ -92,17 +100,38 @@ void compute(Simulation *sim, Vector2 a, float dt) {
 
   // Particle to Grid
   int *n_particle_bin = calloc(sim->grid.width * sim->grid.height, sizeof(int));
-  memset(sim->grid.u_velocities, 0, sim->grid.width + 1);
-  memset(sim->grid.v_velocities, 0, sim->grid.height + 1);
+  memset(sim->grid.u_velocities, 0,
+         (sim->grid.width + 1) * sim->grid.height * sizeof(float));
+  memset(sim->grid.v_velocities, 0,
+         sim->grid.width * (sim->grid.height + 1) * sizeof(float));
 
   for (int i = 0; i < sim->particles.size; i++) {
     // this is what mitxela does
     int grid_x = floorf(sim->particles.data[i].position.x);
     int grid_y = floorf(sim->particles.data[i].position.y);
-    if (grid_x >= 0 && grid_x < sim->grid.width && grid_y >= 0 &&
-        grid_y < sim->grid.height) {
-      n_particle_bin[grid_y * sim->grid.width + grid_x]++;
+
+    if (grid_x < 0 || grid_x >= sim->grid.width || grid_y < 0 ||
+        grid_y >= sim->grid.height) {
+      continue;
     }
+
+    int cell_index = sim->grid.width * grid_y + grid_x;
+    Cell *cell = &sim->grid.cells[cell_index];
+
+    float dx = sim->particles.data[i].position.x - grid_x;
+    float dy = sim->particles.data[i].position.y - grid_y;
+
+    float u_left = dx * sim->particles.data[i].velocity.x;
+    float u_right = (1 - dx) * sim->particles.data[i].velocity.x;
+    float v_top = (1 - dy) * sim->particles.data[i].velocity.y;
+    float v_bottom = dy * sim->particles.data[i].velocity.y;
+
+    *cell->u_right += u_right;
+    *cell->u_left += u_left;
+    *cell->v_bottom += v_bottom;
+    *cell->v_top += v_top;
+
+    n_particle_bin[cell_index]++;
   }
   for (int i = 0; i < sim->grid.height; i++) {
     for (int j = 0; j < sim->grid.width; j++) {

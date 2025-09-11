@@ -2,9 +2,9 @@
 #define FLIP_H
 #include <raylib.h>
 
-#define CELL_SIZE 10.0
-#define SIMWIDTH 80
-#define SIMHEIGHT 80
+#define CELL_SIZE 100.0
+#define SIMWIDTH 8
+#define SIMHEIGHT 8
 
 enum cell_type { AIR, FLUID };
 
@@ -42,5 +42,9 @@ typedef struct {
 
 Simulation initiallise_simulation(int width, int height, enum cell_type *cells);
 void compute(Simulation *sim, Vector2 a, float dt);
+void destroy_sim(Simulation *sim);
+
+int get_u_index(int i, int j, int width, int height);
+int get_v_index(int i, int j, int width, int height);
 
 #endif

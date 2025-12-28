@@ -10,9 +10,11 @@
 #define SHOWGRID 1
 #define SHADEGRID 0
 #define SHOWVELOCITY 1
+#define SHOWDIVERGENCE 0
 
 int main(int argc, char *argv[]) {
   InitWindow(SCREENWIDTH, SCREENHEIGHT, "Fluid Sim");
+  // SetTargetFPS(1);
   int fps;
   char fps_str[10];
   float dt;
@@ -30,11 +32,11 @@ int main(int argc, char *argv[]) {
 
   while (!WindowShouldClose()) {
     dt = GetFrameTime();
+    // dt = 0.166;
     BeginDrawing();
     ClearBackground(BLACK);
     // g.x += dt;
     compute(&sim, g, dt);
-    // printf("G: {%f, %f}\n", g.x, g.y);
     if (SHOWPARTICLE) {
       for (int i = 0; i < sim.particles.size; i++) {
         rect.x = sim.particles.data[i].position.x * CELL_SIZE;
@@ -77,6 +79,17 @@ int main(int argc, char *argv[]) {
               sim.grid.v_velocities[get_v_index(i, j, SIMWIDTH, SIMHEIGHT)];
           DrawLine(u_x1, u_y, u_x2, u_y, RED);
           DrawLine(v_x, v_y1, v_x, v_y2, RED);
+        }
+      }
+    }
+    if (SHOWDIVERGENCE) {
+      char d[5];
+      for (int i = 0; i < sim.grid.height; i++) {
+        for (int j = 0; j < sim.grid.width; j++) {
+          int idx = i * sim.grid.width + j;
+          sprintf(d, "%.1f", sim.grid.cells[idx].divergence);
+          DrawText(d, j * CELL_SIZE + CELL_SIZE / 3,
+                   i * CELL_SIZE + CELL_SIZE / 3, CELL_SIZE / 3, WHITE);
         }
       }
     }

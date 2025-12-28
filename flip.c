@@ -1,5 +1,6 @@
 #include "flip.h"
 #include <math.h>
+#include <raylib.h>
 #include <raymath.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,12 +12,6 @@ float random_float() {
   float r = (float)random() / RAND_MAX;
   return r;
 }
-
-int get_u_index(int i, int j, int width, int height) {
-  return i * (width + 1) + j;
-}
-
-int get_v_index(int i, int j, int width, int height) { return i * width + j; }
 
 Simulation initiallise_simulation(int width, int height,
                                   enum cell_type *initial_config) {
@@ -52,9 +47,8 @@ Simulation initiallise_simulation(int width, int height,
   // Initialize cells with correct velocity pointers
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
-      int cell_idx = i * width + j;
+      int cell_idx = cell_index(i, j, width);
       Cell *cell = &cells[cell_idx];
-
       cell->type = initial_config[cell_idx];
 
       // Set up velocity pointers for each face
@@ -79,12 +73,10 @@ void destroy_sim(Simulation *sim) {
   free(sim->particles.data);
 }
 
-void compute(Simulation *sim, Vector2 a, float dt) {
+void add_gravity(Simulation *sim, Vector2 a, float dt) {
   float restitution = -1.0;
   Vector2 max = {SIMWIDTH, SIMHEIGHT};
   Vector2 min = {0, 0};
-
-  // add gravity
   for (int i = 0; i < sim->particles.size; i++) {
     Particle *p = &sim->particles.data[i];
     p->velocity = Vector2Add(p->velocity, Vector2Scale(a, dt));
@@ -97,8 +89,9 @@ void compute(Simulation *sim, Vector2 a, float dt) {
     };
     p->position = Vector2Clamp(p->position, min, max);
   }
+}
 
-  // Particle to Grid
+void particle_to_grid(Simulation *sim) {
   int *n_particle_bin = calloc(sim->grid.width * sim->grid.height, sizeof(int));
   memset(sim->grid.u_velocities, 0,
          (sim->grid.width + 1) * sim->grid.height * sizeof(float));
@@ -110,19 +103,25 @@ void compute(Simulation *sim, Vector2 a, float dt) {
     int grid_x = floorf(sim->particles.data[i].position.x);
     int grid_y = floorf(sim->particles.data[i].position.y);
 
+    // <WHY DO I HAVE TO DO THIS!! IS THERE A WAY TO REMOVE THIS>
     if (grid_x < 0 || grid_x >= sim->grid.width || grid_y < 0 ||
         grid_y >= sim->grid.height) {
       continue;
     }
 
-    int cell_index = sim->grid.width * grid_y + grid_x;
-    Cell *cell = &sim->grid.cells[cell_index];
+    int cell_idx = cell_index(grid_x, grid_y, sim->grid.width);
+    Cell *cell = &sim->grid.cells[cell_idx];
 
     float dx = sim->particles.data[i].position.x - grid_x;
     float dy = sim->particles.data[i].position.y - grid_y;
 
-    float u_left = dx * sim->particles.data[i].velocity.x;
-    float u_right = (1 - dx) * sim->particles.data[i].velocity.x;
+    if (grid_x == 0)
+      dx = 0;
+    if (grid_x == SIMWIDTH - 1)
+      dx = 1;
+
+    float u_left = (1 - dx) * sim->particles.data[i].velocity.x;
+    float u_right = dx * sim->particles.data[i].velocity.x;
     float v_top = (1 - dy) * sim->particles.data[i].velocity.y;
     float v_bottom = dy * sim->particles.data[i].velocity.y;
 
@@ -131,7 +130,7 @@ void compute(Simulation *sim, Vector2 a, float dt) {
     *cell->v_bottom += v_bottom;
     *cell->v_top += v_top;
 
-    n_particle_bin[cell_index]++;
+    n_particle_bin[cell_idx]++;
   }
   for (int i = 0; i < sim->grid.height; i++) {
     for (int j = 0; j < sim->grid.width; j++) {
@@ -142,4 +141,41 @@ void compute(Simulation *sim, Vector2 a, float dt) {
     }
   }
   free(n_particle_bin);
+}
+
+void make_incompressible(Simulation *sim) {
+  for (int i = 0; i < sim->grid.height; i++) {
+    for (int j = 0; j < sim->grid.width; j++) {
+      Cell *cell = &sim->grid.cells[i * sim->grid.width + j];
+      float d = *cell->u_left + *cell->v_bottom - *cell->u_right - *cell->v_top;
+      float denominator = 4.0;
+
+      if (i == 0 || i == SIMHEIGHT - 1)
+        denominator -= 1.0;
+      if (j == 0 || j == SIMWIDTH - 1)
+        denominator -= 1.0;
+
+      float adjustment = d / denominator;
+      printf("%d, %d; u_left: %f, u_right: %f, Divergence: %f, Denominator: "
+             "%f, Adjustment: "
+             "%f --> ",
+             i, j, *cell->u_left, *cell->u_right, d, denominator, adjustment);
+
+      *cell->u_left -= adjustment;
+      *cell->v_bottom -= adjustment;
+      *cell->u_right += adjustment;
+      *cell->v_top += adjustment;
+
+      // REMOVE THIS IF IT WORKS, ONLY FOR TESTING PURPOSES
+      d = *cell->u_left + *cell->v_bottom - *cell->u_right - *cell->v_top;
+      printf("Divergence: %f\n", d);
+      cell->divergence = d;
+    }
+  }
+}
+
+void compute(Simulation *sim, Vector2 a, float dt) {
+  add_gravity(sim, a, dt);
+  particle_to_grid(sim);
+  // make_incompressible(sim);
 }

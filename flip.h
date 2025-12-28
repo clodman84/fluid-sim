@@ -24,6 +24,7 @@ typedef struct {
   float *v_bottom;
   float *u_left;
   float *u_right;
+  float divergence; // remove this later ONLY FOR TESTING PURPOSES
   enum cell_type type;
 } Cell;
 
@@ -44,7 +45,14 @@ Simulation initiallise_simulation(int width, int height, enum cell_type *cells);
 void compute(Simulation *sim, Vector2 a, float dt);
 void destroy_sim(Simulation *sim);
 
-int get_u_index(int i, int j, int width, int height);
-int get_v_index(int i, int j, int width, int height);
+static inline int get_u_index(int i, int j, int width, int height) {
+  return i * (width + 1) + j;
+}
+
+static inline int get_v_index(int i, int j, int width, int height) {
+  return i * width + j;
+}
+
+static inline int cell_index(int i, int j, int width) { return i * width + j; }
 
 #endif

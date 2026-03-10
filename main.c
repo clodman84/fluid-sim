@@ -7,36 +7,48 @@
 #define SCREENWIDTH 800.0
 #define SCREENHEIGHT 800.0
 #define SHOWPARTICLE 1
-#define SHOWGRID 1
-#define SHADEGRID 0
-#define SHOWVELOCITY 1
+#define SHOWGRID 0
+#define SHADEGRID 1
+#define SHOWVELOCITY 0
 #define SHOWDIVERGENCE 0
 
 int main(int argc, char *argv[]) {
   InitWindow(SCREENWIDTH, SCREENHEIGHT, "Fluid Sim");
-  // SetTargetFPS(1);
+  SetTargetFPS(120);
+
   int fps;
   char fps_str[10];
-  float dt;
 
-  Vector2 g = {0, 9.8};
+  const float fixed_dt = 1.0f / 120.0f;
+  float accumulator = 0.0f;
+
+  Vector2 g = {9.8f, 9.8f};
   Rectangle rect = {200, 100, CELL_SIZE / 20, CELL_SIZE / 20};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
-  // memset(fluid, AIR, sizeof(fluid));
-  // fluid[10] = FLUID;
-  // fluid[20] = FLUID;
-  for (int i = 0; i < SIMHEIGHT * SIMWIDTH; i++) {
-    fluid[i] = FLUID;
+  memset(fluid, AIR, sizeof(fluid));
+
+  for (int i = 0; i < SIMHEIGHT / 2; i++) {
+    for (int j = SIMWIDTH / 4; j < (3 * SIMWIDTH) / 4; j++) {
+      fluid[i * SIMWIDTH + j] = FLUID;
+    }
   }
+
   Simulation sim = initiallise_simulation(SIMWIDTH, SIMHEIGHT, fluid);
 
   while (!WindowShouldClose()) {
-    dt = GetFrameTime();
-    // dt = 0.166;
+    float frame_dt = GetFrameTime();
+    if (frame_dt > 0.033f)
+      frame_dt = 0.033f;
+
+    accumulator += frame_dt;
+    while (accumulator >= fixed_dt) {
+      compute(&sim, g, fixed_dt);
+      accumulator -= fixed_dt;
+    }
+
     BeginDrawing();
     ClearBackground(BLACK);
-    // g.x += dt;
-    compute(&sim, g, dt);
+
     if (SHOWPARTICLE) {
       for (int i = 0; i < sim.particles.size; i++) {
         rect.x = sim.particles.data[i].position.x * CELL_SIZE;
@@ -44,6 +56,55 @@ int main(int argc, char *argv[]) {
         DrawRectangleRec(rect, WHITE);
       }
     }
+
+    if (SHADEGRID) {
+      float min_pressure = 0.0f;
+      float max_pressure = 0.0f;
+      int found_fluid = 0;
+      for (int i = 0; i < sim.grid.height; i++) {
+        for (int j = 0; j < sim.grid.width; j++) {
+          int idx = i * sim.grid.width + j;
+          if (sim.grid.cells[idx].type != FLUID)
+            continue;
+
+          float p = sim.grid.cells[idx].pressure;
+          if (!found_fluid) {
+            min_pressure = p;
+            max_pressure = p;
+            found_fluid = 1;
+          } else {
+            if (p < min_pressure)
+              min_pressure = p;
+            if (p > max_pressure)
+              max_pressure = p;
+          }
+        }
+      }
+
+      float pressure_range = max_pressure - min_pressure;
+      if (pressure_range < 0.0001f)
+        pressure_range = 1.0f;
+
+      char p_text[16];
+      for (int i = 0; i < sim.grid.height; i++) {
+        for (int j = 0; j < sim.grid.width; j++) {
+          int idx = i * sim.grid.width + j;
+          if (sim.grid.cells[idx].type != FLUID)
+            continue;
+
+          float p = sim.grid.cells[idx].pressure;
+          float t = (p - min_pressure) / pressure_range;
+
+          Color pressure_color = {(unsigned char)(40 + 180 * t), 40,
+                                  (unsigned char)(220 - 180 * t), 130};
+          DrawRectangle(j * CELL_SIZE, i * CELL_SIZE, CELL_SIZE, CELL_SIZE,
+                        pressure_color);
+
+          sprintf(p_text, "%.2f", p);
+        }
+      }
+    }
+
     if (SHOWGRID) {
       for (int i = 0; i <= SIMHEIGHT; i++) {
         DrawLine(0, i * CELL_SIZE, SIMWIDTH * CELL_SIZE, i * CELL_SIZE, GRAY);
@@ -52,17 +113,7 @@ int main(int argc, char *argv[]) {
         DrawLine(i * CELL_SIZE, 0, i * CELL_SIZE, SIMHEIGHT * CELL_SIZE, GRAY);
       }
     }
-    if (SHADEGRID) {
-      for (int i = 0; i < sim.grid.height; i++) {
-        for (int j = 0; j < sim.grid.width; j++) {
-          int idx = i * sim.grid.width + j;
-          if (sim.grid.cells[idx].type == FLUID)
-            DrawRectangle(j * CELL_SIZE, i * CELL_SIZE, CELL_SIZE, CELL_SIZE,
-                          LIGHTGRAY);
-          ;
-        }
-      }
-    }
+
     if (SHOWVELOCITY) {
       for (int i = 0; i < sim.grid.height; i++) {
         for (int j = 0; j < sim.grid.width; j++) {
@@ -82,6 +133,7 @@ int main(int argc, char *argv[]) {
         }
       }
     }
+
     if (SHOWDIVERGENCE) {
       char d[5];
       for (int i = 0; i < sim.grid.height; i++) {
@@ -99,6 +151,7 @@ int main(int argc, char *argv[]) {
     DrawText(fps_str, 10, 10, 30, WHITE);
     EndDrawing();
   }
+
   destroy_sim(&sim);
   CloseWindow();
   return 1;

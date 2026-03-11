@@ -26,6 +26,7 @@ typedef struct {
   float *u_right;
   float divergence; // remove this later ONLY FOR TESTING PURPOSES
   float pressure;
+  float density;
   enum cell_type type;
 } Cell;
 

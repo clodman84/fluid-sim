@@ -27,8 +27,8 @@ int main(int argc, char *argv[]) {
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
 
-  for (int i = 0; i < SIMHEIGHT; i++) {
-    for (int j = 0; j < 2 * SIMWIDTH / 3; j++) {
+  for (int i = 0; i < SIMHEIGHT / 2; i++) {
+    for (int j = SIMWIDTH / 3; j < 2 * SIMWIDTH / 3; j++) {
       fluid[i * SIMWIDTH + j] = FLUID;
     }
   }

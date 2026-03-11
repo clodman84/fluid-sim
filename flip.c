@@ -1,14 +1,18 @@
 #include "flip.h"
+#include <limits.h>
 #include <math.h>
 #include <raylib.h>
 #include <raymath.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define N_PARTICLES_PER_CELL 32
-#define FLIP_BLEND 0.95f
+#define N_PARTICLES_PER_CELL 4
+#define FLIP_BLEND 0.99f
 #define PRESSURE_ITERS 40
 #define BOUNDARY_DAMPING 0.0f
+#define PARTICLE_COLLISION_ITERS 2
+#define PARTICLE_RADIUS 0.25f
+#define DRIFT_COMPENSATION 1.0f
 
 static float random_float() { return (float)random() / (float)RAND_MAX; }
 
@@ -18,6 +22,149 @@ static float clampf(float v, float min_v, float max_v) {
   if (v > max_v)
     return max_v;
   return v;
+}
+
+static void resolve_particle_pair(Particle *a, Particle *b, float min_dist,
+                                  int width, int height) {
+  Vector2 delta = Vector2Subtract(b->position, a->position);
+  float d2 = Vector2LengthSqr(delta);
+  if (d2 <= 1e-10f) {
+    float angle = random_float() * 2.0f * PI;
+    delta = (Vector2){cosf(angle), sinf(angle)};
+    d2 = 1.0f;
+  }
+
+  float min_d2 = min_dist * min_dist;
+  if (d2 >= min_d2)
+    return;
+
+  float d = sqrtf(d2);
+  Vector2 n = Vector2Scale(delta, 1.0f / d);
+  float corr = 0.5f * (min_dist - d);
+  a->position = Vector2Subtract(a->position, Vector2Scale(n, corr));
+  b->position = Vector2Add(b->position, Vector2Scale(n, corr));
+
+  a->position.x = clampf(a->position.x, 0.001f, width - 0.001f);
+  a->position.y = clampf(a->position.y, 0.001f, height - 0.001f);
+  b->position.x = clampf(b->position.x, 0.001f, width - 0.001f);
+  b->position.y = clampf(b->position.y, 0.001f, height - 0.001f);
+}
+
+typedef struct {
+  int key;
+  int head;
+} HashBucket;
+
+static int hash_coords(int x, int y) {
+  // Large primes for 2D integer hashing.
+  unsigned int hx = (unsigned int)(x * 73856093);
+  unsigned int hy = (unsigned int)(y * 19349663);
+  return (int)(hx ^ hy);
+}
+
+static int find_or_create_bucket(HashBucket *buckets, int bucket_count,
+                                 int key) {
+  int slot = (key & 0x7fffffff) % bucket_count;
+  while (1) {
+    if (buckets[slot].key == key)
+      return slot;
+    if (buckets[slot].key == INT_MIN) {
+      buckets[slot].key = key;
+      buckets[slot].head = -1;
+      return slot;
+    }
+    slot = (slot + 1) % bucket_count;
+  }
+}
+
+static int find_bucket(const HashBucket *buckets, int bucket_count, int key) {
+  int slot = (key & 0x7fffffff) % bucket_count;
+  while (1) {
+    if (buckets[slot].key == key)
+      return slot;
+    if (buckets[slot].key == INT_MIN)
+      return -1;
+    slot = (slot + 1) % bucket_count;
+  }
+}
+
+static void resolve_particle_collisions(Simulation *sim) {
+  int n = sim->particles.size;
+  if (n <= 1)
+    return;
+
+  float min_dist = 2.0f * PARTICLE_RADIUS;
+  float inv_cell_size = 1.0f / min_dist;
+
+  int bucket_count = 1;
+  while (bucket_count < (n * 2))
+    bucket_count <<= 1;
+
+  HashBucket *buckets = malloc(sizeof(HashBucket) * bucket_count);
+  int *next = malloc(sizeof(int) * n);
+  int *cell_x = malloc(sizeof(int) * n);
+  int *cell_y = malloc(sizeof(int) * n);
+
+  if (!buckets || !next || !cell_x || !cell_y) {
+    free(buckets);
+    free(next);
+    free(cell_x);
+    free(cell_y);
+    return;
+  }
+
+  for (int iter = 0; iter < PARTICLE_COLLISION_ITERS; iter++) {
+    for (int i = 0; i < bucket_count; i++) {
+      buckets[i].key = INT_MIN;
+      buckets[i].head = -1;
+    }
+
+    for (int p_idx = 0; p_idx < n; p_idx++) {
+      Particle *p = &sim->particles.data[p_idx];
+      int cx = (int)floorf(p->position.x * inv_cell_size);
+      int cy = (int)floorf(p->position.y * inv_cell_size);
+      cell_x[p_idx] = cx;
+      cell_y[p_idx] = cy;
+
+      int key = hash_coords(cx, cy);
+      int slot = find_or_create_bucket(buckets, bucket_count, key);
+      next[p_idx] = buckets[slot].head;
+      buckets[slot].head = p_idx;
+    }
+
+    for (int a_idx = 0; a_idx < n; a_idx++) {
+      int ax = cell_x[a_idx];
+      int ay = cell_y[a_idx];
+
+      for (int oy = -1; oy <= 1; oy++) {
+        for (int ox = -1; ox <= 1; ox++) {
+          int nx = ax + ox;
+          int ny = ay + oy;
+          int key = hash_coords(nx, ny);
+          int slot = find_bucket(buckets, bucket_count, key);
+          if (slot < 0)
+            continue;
+
+          for (int b_idx = buckets[slot].head; b_idx != -1;
+               b_idx = next[b_idx]) {
+            if (b_idx <= a_idx)
+              continue;
+            if (cell_x[b_idx] != nx || cell_y[b_idx] != ny)
+              continue;
+
+            resolve_particle_pair(&sim->particles.data[a_idx],
+                                  &sim->particles.data[b_idx], min_dist,
+                                  sim->grid.width, sim->grid.height);
+          }
+        }
+      }
+    }
+  }
+
+  free(buckets);
+  free(next);
+  free(cell_x);
+  free(cell_y);
 }
 
 Simulation initiallise_simulation(int width, int height,
@@ -58,6 +205,7 @@ Simulation initiallise_simulation(int width, int height,
       cell->v_top = &v_velocities[get_v_index(i + 1, j, width, height)];
       cell->divergence = 0.0f;
       cell->pressure = 0.0f;
+      cell->density = 0.0f;
     }
   }
 
@@ -153,6 +301,8 @@ static void particle_to_grid(Simulation *sim) {
       int idx = cell_index(i, j, width);
       sim->grid.cells[idx].type = particle_count[idx] > 0 ? FLUID : AIR;
       sim->grid.cells[idx].pressure = 0.0f;
+      sim->grid.cells[idx].density =
+          (float)particle_count[idx] / (float)N_PARTICLES_PER_CELL;
       sim->grid.cells[idx].divergence = 0.0f;
     }
   }
@@ -216,6 +366,12 @@ static void enforce_boundaries(Simulation *sim) {
   }
 }
 
+static int is_fluid_cell(Grid *grid, int i, int j) {
+  if (i < 0 || i >= grid->height || j < 0 || j >= grid->width)
+    return 0;
+  return grid->cells[cell_index(i, j, grid->width)].type == FLUID;
+}
+
 static void make_incompressible(Simulation *sim) {
   int width = sim->grid.width;
   int height = sim->grid.height;
@@ -238,7 +394,15 @@ static void make_incompressible(Simulation *sim) {
       float v_b = sim->grid.v_velocities[get_v_index(i, j, width, height)];
       float v_t = sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
 
-      divergence[idx] = (u_r - u_l) + (v_t - v_b);
+      float base_divergence = (u_r - u_l) + (v_t - v_b);
+      float compression = fmaxf(0.0f, cell->density - 1.0f);
+      int interior = is_fluid_cell(&sim->grid, i, j - 1) &&
+                     is_fluid_cell(&sim->grid, i, j + 1) &&
+                     is_fluid_cell(&sim->grid, i - 1, j) &&
+                     is_fluid_cell(&sim->grid, i + 1, j);
+      float drift_term = interior ? DRIFT_COMPENSATION * compression : 0.0f;
+
+      divergence[idx] = base_divergence - drift_term;
       cell->divergence = divergence[idx];
     }
   }
@@ -443,6 +607,7 @@ void compute(Simulation *sim, Vector2 a, float dt) {
   enforce_boundaries(sim);
   make_incompressible(sim);
   grid_to_particle(sim, prev_u, prev_v, dt);
+  resolve_particle_collisions(sim);
 
   free(prev_u);
   free(prev_v);

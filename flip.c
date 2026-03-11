@@ -165,6 +165,8 @@ static void particle_to_grid(Simulation *sim) {
 static void add_gravity_to_grid(Simulation *sim, Vector2 a, float dt) {
   int width = sim->grid.width;
   int height = sim->grid.height;
+
+  // v faces live on a (height + 1) x width grid.
   for (int i = 0; i <= height; i++) {
     for (int j = 0; j < width; j++) {
       int bottom_cell = i - 1;
@@ -176,10 +178,25 @@ static void add_gravity_to_grid(Simulation *sim, Vector2 a, float dt) {
       if (top_cell < height &&
           sim->grid.cells[cell_index(top_cell, j, width)].type == FLUID)
         active = 1;
-      if (active) {
+      if (active)
         sim->grid.v_velocities[get_v_index(i, j, width, height)] += a.y * dt;
+    }
+  }
+
+  // u faces live on a height x (width + 1) grid.
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j <= width; j++) {
+      int left_cell = j - 1;
+      int right_cell = j;
+      int active = 0;
+      if (left_cell >= 0 &&
+          sim->grid.cells[cell_index(i, left_cell, width)].type == FLUID)
+        active = 1;
+      if (right_cell < width &&
+          sim->grid.cells[cell_index(i, right_cell, width)].type == FLUID)
+        active = 1;
+      if (active)
         sim->grid.u_velocities[get_u_index(i, j, width, height)] += a.x * dt;
-      }
     }
   }
 }

@@ -6,7 +6,7 @@
 
 #define SCREENWIDTH 800.0
 #define SCREENHEIGHT 800.0
-#define SHOWPARTICLE 1
+#define SHOWPARTICLE 0
 #define SHOWGRID 0
 #define SHADEGRID 1
 #define SHOWVELOCITY 0
@@ -14,15 +14,15 @@
 
 int main(int argc, char *argv[]) {
   InitWindow(SCREENWIDTH, SCREENHEIGHT, "Fluid Sim");
-  SetTargetFPS(120);
+  // SetTargetFPS(60);
 
   int fps;
   char fps_str[10];
 
-  const float fixed_dt = 1.0f / 120.0f;
+  // const float fixed_dt = 1.0f / 240.0f;
   float accumulator = 0.0f;
 
-  Vector2 g = {9.8f, 9.8f};
+  Vector2 g = {0.0f, 9.8f};
   Rectangle rect = {200, 100, CELL_SIZE / 20, CELL_SIZE / 20};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
@@ -34,17 +34,18 @@ int main(int argc, char *argv[]) {
   }
 
   Simulation sim = initiallise_simulation(SIMWIDTH, SIMHEIGHT, fluid);
-
+  float display_abs_pressure = 1.0f;
   while (!WindowShouldClose()) {
     float frame_dt = GetFrameTime();
     if (frame_dt > 0.033f)
       frame_dt = 0.033f;
 
-    accumulator += frame_dt;
-    while (accumulator >= fixed_dt) {
-      compute(&sim, g, fixed_dt);
-      accumulator -= fixed_dt;
-    }
+    // accumulator += frame_dt;
+    // while (accumulator >= fixed_dt) {
+    //   compute(&sim, g, fixed_dt);
+    //   accumulator -= fixed_dt;
+    // }
+    compute(&sim, g, frame_dt);
 
     BeginDrawing();
     ClearBackground(BLACK);
@@ -58,34 +59,28 @@ int main(int argc, char *argv[]) {
     }
 
     if (SHADEGRID) {
-      float min_pressure = 0.0f;
-      float max_pressure = 0.0f;
-      int found_fluid = 0;
+      float max_abs_pressure = 0.0f;
       for (int i = 0; i < sim.grid.height; i++) {
         for (int j = 0; j < sim.grid.width; j++) {
           int idx = i * sim.grid.width + j;
           if (sim.grid.cells[idx].type != FLUID)
             continue;
 
-          float p = sim.grid.cells[idx].pressure;
-          if (!found_fluid) {
-            min_pressure = p;
-            max_pressure = p;
-            found_fluid = 1;
-          } else {
-            if (p < min_pressure)
-              min_pressure = p;
-            if (p > max_pressure)
-              max_pressure = p;
-          }
+          float abs_p = fabsf(sim.grid.cells[idx].pressure);
+          if (abs_p > max_abs_pressure)
+            max_abs_pressure = abs_p;
         }
       }
 
-      float pressure_range = max_pressure - min_pressure;
-      if (pressure_range < 0.0001f)
-        pressure_range = 1.0f;
+      if (max_abs_pressure < 0.001f)
+        max_abs_pressure = 0.001f;
 
-      char p_text[16];
+      // Exponential smoothing avoids frame-to-frame flicker.
+      display_abs_pressure =
+          display_abs_pressure * 0.95f + max_abs_pressure * 0.05f;
+      if (display_abs_pressure < 0.001f)
+        display_abs_pressure = 0.001f;
+
       for (int i = 0; i < sim.grid.height; i++) {
         for (int j = 0; j < sim.grid.width; j++) {
           int idx = i * sim.grid.width + j;
@@ -93,14 +88,13 @@ int main(int argc, char *argv[]) {
             continue;
 
           float p = sim.grid.cells[idx].pressure;
-          float t = (p - min_pressure) / pressure_range;
+          float t = 0.5f + 0.5f * (p / display_abs_pressure);
+          t = Clamp(t, 0.0f, 1.0f);
 
           Color pressure_color = {(unsigned char)(40 + 180 * t), 40,
                                   (unsigned char)(220 - 180 * t), 130};
           DrawRectangle(j * CELL_SIZE, i * CELL_SIZE, CELL_SIZE, CELL_SIZE,
                         pressure_color);
-
-          sprintf(p_text, "%.2f", p);
         }
       }
     }

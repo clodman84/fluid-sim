@@ -5,10 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N_PARTICLES_PER_CELL 32
-#define FLIP_BLEND 0.98f
+#define N_PARTICLES_PER_CELL 16
+#define FLIP_BLEND 0.95f
 #define PRESSURE_ITERS 40
-#define BOUNDARY_DAMPING -1.0f
+#define BOUNDARY_DAMPING 0.0f
 
 static float random_float() { return (float)random() / (float)RAND_MAX; }
 
@@ -202,47 +202,132 @@ static void enforce_boundaries(Simulation *sim) {
 static void make_incompressible(Simulation *sim) {
   int width = sim->grid.width;
   int height = sim->grid.height;
+  int cell_count = width * height;
 
+  float *pressure = calloc(cell_count, sizeof(float));
+  float *pressure_next = calloc(cell_count, sizeof(float));
+  float *divergence = calloc(cell_count, sizeof(float));
+
+  // Build divergence field from current staggered velocities.
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      int idx = cell_index(i, j, width);
+      Cell *cell = &sim->grid.cells[idx];
+      if (cell->type != FLUID)
+        continue;
+
+      float u_l = sim->grid.u_velocities[get_u_index(i, j, width, height)];
+      float u_r = sim->grid.u_velocities[get_u_index(i, j + 1, width, height)];
+      float v_b = sim->grid.v_velocities[get_v_index(i, j, width, height)];
+      float v_t = sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
+
+      divergence[idx] = (u_r - u_l) + (v_t - v_b);
+      cell->divergence = divergence[idx];
+    }
+  }
+
+  // Jacobi pressure solve (air pressure = 0 free surface).
   for (int iter = 0; iter < PRESSURE_ITERS; iter++) {
     for (int i = 0; i < height; i++) {
       for (int j = 0; j < width; j++) {
-        Cell *cell = &sim->grid.cells[cell_index(i, j, width)];
-        if (cell->type != FLUID)
+        int idx = cell_index(i, j, width);
+        if (sim->grid.cells[idx].type != FLUID) {
+          pressure_next[idx] = 0.0f;
           continue;
+        }
 
-        float u_l = sim->grid.u_velocities[get_u_index(i, j, width, height)];
-        float u_r =
-            sim->grid.u_velocities[get_u_index(i, j + 1, width, height)];
-        float v_b = sim->grid.v_velocities[get_v_index(i, j, width, height)];
-        float v_t =
-            sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
-
-        float div = (u_r - u_l) + (v_t - v_b);
+        float sum = 0.0f;
         float denom = 0.0f;
-        if (j > 0)
-          denom += 1.0f;
-        if (j < width - 1)
-          denom += 1.0f;
-        if (i > 0)
-          denom += 1.0f;
-        if (i < height - 1)
-          denom += 1.0f;
 
-        if (denom <= 0.0f)
-          continue;
+        // left
+        if (j > 0) {
+          denom += 1.0f;
+          int n = cell_index(i, j - 1, width);
+          if (sim->grid.cells[n].type == FLUID)
+            sum += pressure[n];
+        }
+        // right
+        if (j < width - 1) {
+          denom += 1.0f;
+          int n = cell_index(i, j + 1, width);
+          if (sim->grid.cells[n].type == FLUID)
+            sum += pressure[n];
+        }
+        // bottom
+        if (i > 0) {
+          denom += 1.0f;
+          int n = cell_index(i - 1, j, width);
+          if (sim->grid.cells[n].type == FLUID)
+            sum += pressure[n];
+        }
+        // top
+        if (i < height - 1) {
+          denom += 1.0f;
+          int n = cell_index(i + 1, j, width);
+          if (sim->grid.cells[n].type == FLUID)
+            sum += pressure[n];
+        }
 
-        float corr = div / denom;
-        sim->grid.u_velocities[get_u_index(i, j, width, height)] += corr;
-        sim->grid.u_velocities[get_u_index(i, j + 1, width, height)] -= corr;
-        sim->grid.v_velocities[get_v_index(i, j, width, height)] += corr;
-        sim->grid.v_velocities[get_v_index(i + 1, j, width, height)] -= corr;
-
-        cell->divergence = div;
-        cell->pressure += corr;
+        if (denom > 0.0f)
+          pressure_next[idx] = (sum - divergence[idx]) / denom;
+        else
+          pressure_next[idx] = 0.0f;
       }
+    }
+
+    float *tmp = pressure;
+    pressure = pressure_next;
+    pressure_next = tmp;
+  }
+
+  // Apply pressure gradient to faces.
+  for (int i = 0; i < height; i++) {
+    for (int j = 1; j < width; j++) {
+      int left_idx = cell_index(i, j - 1, width);
+      int right_idx = cell_index(i, j, width);
+      int u_idx = get_u_index(i, j, width, height);
+
+      int left_fluid = sim->grid.cells[left_idx].type == FLUID;
+      int right_fluid = sim->grid.cells[right_idx].type == FLUID;
+      if (!(left_fluid || right_fluid))
+        continue;
+
+      float p_left = left_fluid ? pressure[left_idx] : 0.0f;
+      float p_right = right_fluid ? pressure[right_idx] : 0.0f;
+      sim->grid.u_velocities[u_idx] -= (p_right - p_left);
+    }
+  }
+
+  for (int i = 1; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      int bottom_idx = cell_index(i - 1, j, width);
+      int top_idx = cell_index(i, j, width);
+      int v_idx = get_v_index(i, j, width, height);
+
+      int bottom_fluid = sim->grid.cells[bottom_idx].type == FLUID;
+      int top_fluid = sim->grid.cells[top_idx].type == FLUID;
+      if (!(bottom_fluid || top_fluid))
+        continue;
+
+      float p_bottom = bottom_fluid ? pressure[bottom_idx] : 0.0f;
+      float p_top = top_fluid ? pressure[top_idx] : 0.0f;
+      sim->grid.v_velocities[v_idx] -= (p_top - p_bottom);
+    }
+  }
+
+  enforce_boundaries(sim);
+
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      int idx = cell_index(i, j, width);
+      sim->grid.cells[idx].pressure =
+          sim->grid.cells[idx].type == FLUID ? pressure[idx] : 0.0f;
     }
     enforce_boundaries(sim);
   }
+  free(pressure);
+  free(pressure_next);
+  free(divergence);
 }
 
 static float sample_u(const float *u, int width, int height, float x, float y) {
@@ -338,6 +423,7 @@ void compute(Simulation *sim, Vector2 a, float dt) {
   memcpy(prev_v, sim->grid.v_velocities, sizeof(float) * v_count);
 
   add_gravity_to_grid(sim, a, dt);
+  enforce_boundaries(sim);
   make_incompressible(sim);
   grid_to_particle(sim, prev_u, prev_v, dt);
 

@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
       for (int i = 0; i < sim.particles.size; i++) {
         rect.x = sim.particles.data[i].position.x * CELL_SIZE;
         rect.y = sim.particles.data[i].position.y * CELL_SIZE;
-        DrawRectangleRec(rect, WHITE);
+        DrawPixelV((Vector2){rect.x, rect.y}, WHITE);
       }
     }
 

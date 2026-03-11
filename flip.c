@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N_PARTICLES_PER_CELL 16
+#define N_PARTICLES_PER_CELL 32
 #define FLIP_BLEND 0.95f
 #define PRESSURE_ITERS 40
 #define BOUNDARY_DAMPING 0.0f

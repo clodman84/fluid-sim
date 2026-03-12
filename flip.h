@@ -2,9 +2,9 @@
 #define FLIP_H
 #include <raylib.h>
 
-#define CELL_SIZE 10.0
-#define SIMWIDTH 80
-#define SIMHEIGHT 80
+#define CELL_SIZE 5.0 * 10 / 8
+#define SIMWIDTH 160
+#define SIMHEIGHT 160
 
 enum cell_type { AIR, FLUID };
 

@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-<<<<<<< HEAD
 #define N_PARTICLES_PER_CELL 4
 #define FLIP_BLEND 0.99f
 #define PRESSURE_ITERS 40
@@ -14,13 +13,6 @@
 #define PARTICLE_COLLISION_ITERS 2
 #define PARTICLE_RADIUS 0.25f
 #define DRIFT_COMPENSATION 1.0f
-=======
-#define N_PARTICLES_PER_CELL 16
-#define FLIP_BLEND 0.99f
-#define PRESSURE_ITERS 20
-#define BOUNDARY_DAMPING -0.5f
->>>>>>> main
-
 static float random_float() { return (float)random() / (float)RAND_MAX; }
 
 static float clampf(float v, float min_v, float max_v) {
@@ -29,7 +21,6 @@ static float clampf(float v, float min_v, float max_v) {
   if (v > max_v)
     return max_v;
   return v;
-<<<<<<< HEAD
 }
 
 static void resolve_particle_pair(Particle *a, Particle *b, float min_dist,
@@ -173,8 +164,6 @@ static void resolve_particle_collisions(Simulation *sim) {
   free(next);
   free(cell_x);
   free(cell_y);
-=======
->>>>>>> main
 }
 
 Simulation initiallise_simulation(int width, int height,
@@ -214,11 +203,8 @@ Simulation initiallise_simulation(int width, int height,
       cell->v_bottom = &v_velocities[get_v_index(i, j, width, height)];
       cell->v_top = &v_velocities[get_v_index(i + 1, j, width, height)];
       cell->divergence = 0.0f;
-<<<<<<< HEAD
       cell->pressure = 0.0f;
       cell->density = 0.0f;
-=======
->>>>>>> main
     }
   }
 
@@ -311,17 +297,12 @@ static void particle_to_grid(Simulation *sim) {
 
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
-<<<<<<< HEAD
       int idx = cell_index(i, j, width);
       sim->grid.cells[idx].type = particle_count[idx] > 0 ? FLUID : AIR;
       sim->grid.cells[idx].pressure = 0.0f;
       sim->grid.cells[idx].density =
           (float)particle_count[idx] / (float)N_PARTICLES_PER_CELL;
       sim->grid.cells[idx].divergence = 0.0f;
-=======
-      sim->grid.cells[cell_index(i, j, width)].type =
-          particle_count[cell_index(i, j, width)] > 0 ? FLUID : AIR;
->>>>>>> main
     }
   }
 
@@ -333,11 +314,8 @@ static void particle_to_grid(Simulation *sim) {
 static void add_gravity_to_grid(Simulation *sim, Vector2 a, float dt) {
   int width = sim->grid.width;
   int height = sim->grid.height;
-<<<<<<< HEAD
 
   // v faces live on a (height + 1) x width grid.
-=======
->>>>>>> main
   for (int i = 0; i <= height; i++) {
     for (int j = 0; j < width; j++) {
       int bottom_cell = i - 1;
@@ -353,7 +331,6 @@ static void add_gravity_to_grid(Simulation *sim, Vector2 a, float dt) {
         sim->grid.v_velocities[get_v_index(i, j, width, height)] += a.y * dt;
     }
   }
-<<<<<<< HEAD
 
   // u faces live on a height x (width + 1) grid.
   for (int i = 0; i < height; i++) {
@@ -371,8 +348,6 @@ static void add_gravity_to_grid(Simulation *sim, Vector2 a, float dt) {
         sim->grid.u_velocities[get_u_index(i, j, width, height)] += a.x * dt;
     }
   }
-=======
->>>>>>> main
 }
 
 static void enforce_boundaries(Simulation *sim) {
@@ -390,7 +365,6 @@ static void enforce_boundaries(Simulation *sim) {
   }
 }
 
-<<<<<<< HEAD
 static int is_fluid_cell(Grid *grid, int i, int j) {
   if (i < 0 || i >= grid->height || j < 0 || j >= grid->width)
     return 0;
@@ -534,51 +508,6 @@ static void make_incompressible(Simulation *sim) {
   free(pressure);
   free(pressure_next);
   free(divergence);
-=======
-static void make_incompressible(Simulation *sim) {
-  int width = sim->grid.width;
-  int height = sim->grid.height;
-
-  for (int iter = 0; iter < PRESSURE_ITERS; iter++) {
-    for (int i = 0; i < height; i++) {
-      for (int j = 0; j < width; j++) {
-        Cell *cell = &sim->grid.cells[cell_index(i, j, width)];
-        if (cell->type != FLUID)
-          continue;
-
-        float u_l = sim->grid.u_velocities[get_u_index(i, j, width, height)];
-        float u_r =
-            sim->grid.u_velocities[get_u_index(i, j + 1, width, height)];
-        float v_b = sim->grid.v_velocities[get_v_index(i, j, width, height)];
-        float v_t =
-            sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
-
-        float div = (u_r - u_l) + (v_t - v_b);
-        float denom = 0.0f;
-        if (j > 0)
-          denom += 1.0f;
-        if (j < width - 1)
-          denom += 1.0f;
-        if (i > 0)
-          denom += 1.0f;
-        if (i < height - 1)
-          denom += 1.0f;
-
-        if (denom <= 0.0f)
-          continue;
-
-        float corr = div / denom;
-        sim->grid.u_velocities[get_u_index(i, j, width, height)] += corr;
-        sim->grid.u_velocities[get_u_index(i, j + 1, width, height)] -= corr;
-        sim->grid.v_velocities[get_v_index(i, j, width, height)] += corr;
-        sim->grid.v_velocities[get_v_index(i + 1, j, width, height)] -= corr;
-
-        cell->divergence = div;
-      }
-    }
-    enforce_boundaries(sim);
-  }
->>>>>>> main
 }
 
 static float sample_u(const float *u, int width, int height, float x, float y) {
@@ -674,16 +603,10 @@ void compute(Simulation *sim, Vector2 a, float dt) {
   memcpy(prev_v, sim->grid.v_velocities, sizeof(float) * v_count);
 
   add_gravity_to_grid(sim, a, dt);
-<<<<<<< HEAD
   enforce_boundaries(sim);
   make_incompressible(sim);
   grid_to_particle(sim, prev_u, prev_v, dt);
   resolve_particle_collisions(sim);
-=======
-  make_incompressible(sim);
-  grid_to_particle(sim, prev_u, prev_v, dt);
->>>>>>> main
-
   free(prev_u);
   free(prev_v);
 }

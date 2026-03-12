@@ -8,11 +8,7 @@
 #define SCREENHEIGHT 800.0
 #define SHOWPARTICLE 1
 #define SHOWGRID 0
-<<<<<<< HEAD
 #define SHADEGRID 1
-=======
-#define SHADEGRID 0
->>>>>>> main
 #define SHOWVELOCITY 0
 #define SHOWDIVERGENCE 0
 
@@ -30,19 +26,6 @@ int main(int argc, char *argv[]) {
   Rectangle rect = {200, 100, CELL_SIZE / 20, CELL_SIZE / 20};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
-<<<<<<< HEAD
-=======
-
-  // Start with a compact blob instead of a fully-filled domain.
-  // A full box of fluid in a closed container will mostly remain static.
-  for (int i = 0; i < SIMHEIGHT / 2; i++) {
-    for (int j = SIMWIDTH / 4; j < (3 * SIMWIDTH) / 4; j++) {
-      fluid[i * SIMWIDTH + j] = FLUID;
-    }
-  }
-  Simulation sim = initiallise_simulation(SIMWIDTH, SIMHEIGHT, fluid);
->>>>>>> main
-
   for (int i = 0; i < SIMHEIGHT / 2; i++) {
     for (int j = SIMWIDTH / 3; j < 2 * SIMWIDTH / 3; j++) {
       fluid[i * SIMWIDTH + j] = FLUID;

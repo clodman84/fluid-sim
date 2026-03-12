@@ -8,21 +8,30 @@
 #define SCREENHEIGHT 800.0
 #define SHOWPARTICLE 1
 #define SHOWGRID 0
+<<<<<<< HEAD
+#define SHADEGRID 1
+=======
 #define SHADEGRID 0
+>>>>>>> main
 #define SHOWVELOCITY 0
 #define SHOWDIVERGENCE 0
 
 int main(int argc, char *argv[]) {
   InitWindow(SCREENWIDTH, SCREENHEIGHT, "Fluid Sim");
-  // SetTargetFPS(1);
+  // SetTargetFPS(60);
+
   int fps;
   char fps_str[10];
-  float dt;
 
-  Vector2 g = {0, 9.8};
+  // const float fixed_dt = 1.0f / 240.0f;
+  float accumulator = 0.0f;
+
+  Vector2 g = {9.8f, 9.8f};
   Rectangle rect = {200, 100, CELL_SIZE / 20, CELL_SIZE / 20};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
+<<<<<<< HEAD
+=======
 
   // Start with a compact blob instead of a fully-filled domain.
   // A full box of fluid in a closed container will mostly remain static.
@@ -32,21 +41,80 @@ int main(int argc, char *argv[]) {
     }
   }
   Simulation sim = initiallise_simulation(SIMWIDTH, SIMHEIGHT, fluid);
+>>>>>>> main
 
+  for (int i = 0; i < SIMHEIGHT / 2; i++) {
+    for (int j = SIMWIDTH / 3; j < 2 * SIMWIDTH / 3; j++) {
+      fluid[i * SIMWIDTH + j] = FLUID;
+    }
+  }
+
+  Simulation sim = initiallise_simulation(SIMWIDTH, SIMHEIGHT, fluid);
+  float display_abs_pressure = 1.0f;
   while (!WindowShouldClose()) {
-    dt = GetFrameTime();
-    // dt = 0.166;
+    float frame_dt = GetFrameTime();
+    if (frame_dt > 0.033f)
+      frame_dt = 0.033f;
+
+    // accumulator += frame_dt;
+    // while (accumulator >= fixed_dt) {
+    //   compute(&sim, g, fixed_dt);
+    //   accumulator -= fixed_dt;
+    // }
+    compute(&sim, g, frame_dt);
+
     BeginDrawing();
     ClearBackground(BLACK);
-    // g.x += dt;
-    compute(&sim, g, dt);
+
     if (SHOWPARTICLE) {
       for (int i = 0; i < sim.particles.size; i++) {
         rect.x = sim.particles.data[i].position.x * CELL_SIZE;
         rect.y = sim.particles.data[i].position.y * CELL_SIZE;
-        DrawRectangleRec(rect, WHITE);
+        DrawPixelV((Vector2){rect.x, rect.y}, WHITE);
       }
     }
+
+    if (SHADEGRID) {
+      float max_abs_pressure = 0.0f;
+      for (int i = 0; i < sim.grid.height; i++) {
+        for (int j = 0; j < sim.grid.width; j++) {
+          int idx = i * sim.grid.width + j;
+          if (sim.grid.cells[idx].type != FLUID)
+            continue;
+
+          float abs_p = fabsf(sim.grid.cells[idx].pressure);
+          if (abs_p > max_abs_pressure)
+            max_abs_pressure = abs_p;
+        }
+      }
+
+      if (max_abs_pressure < 0.001f)
+        max_abs_pressure = 0.001f;
+
+      // Exponential smoothing avoids frame-to-frame flicker.
+      display_abs_pressure =
+          display_abs_pressure * 0.95f + max_abs_pressure * 0.05f;
+      if (display_abs_pressure < 0.001f)
+        display_abs_pressure = 0.001f;
+
+      for (int i = 0; i < sim.grid.height; i++) {
+        for (int j = 0; j < sim.grid.width; j++) {
+          int idx = i * sim.grid.width + j;
+          if (sim.grid.cells[idx].type != FLUID)
+            continue;
+
+          float p = sim.grid.cells[idx].pressure;
+          float t = 0.5f + 0.5f * (p / display_abs_pressure);
+          t = Clamp(t, 0.0f, 1.0f);
+
+          Color pressure_color = {(unsigned char)(40 + 180 * t), 40,
+                                  (unsigned char)(220 - 180 * t), 130};
+          DrawRectangle(j * CELL_SIZE, i * CELL_SIZE, CELL_SIZE, CELL_SIZE,
+                        pressure_color);
+        }
+      }
+    }
+
     if (SHOWGRID) {
       for (int i = 0; i <= SIMHEIGHT; i++) {
         DrawLine(0, i * CELL_SIZE, SIMWIDTH * CELL_SIZE, i * CELL_SIZE, GRAY);
@@ -55,17 +123,7 @@ int main(int argc, char *argv[]) {
         DrawLine(i * CELL_SIZE, 0, i * CELL_SIZE, SIMHEIGHT * CELL_SIZE, GRAY);
       }
     }
-    if (SHADEGRID) {
-      for (int i = 0; i < sim.grid.height; i++) {
-        for (int j = 0; j < sim.grid.width; j++) {
-          int idx = i * sim.grid.width + j;
-          if (sim.grid.cells[idx].type == FLUID)
-            DrawRectangle(j * CELL_SIZE, i * CELL_SIZE, CELL_SIZE, CELL_SIZE,
-                          LIGHTGRAY);
-          ;
-        }
-      }
-    }
+
     if (SHOWVELOCITY) {
       for (int i = 0; i < sim.grid.height; i++) {
         for (int j = 0; j < sim.grid.width; j++) {
@@ -85,6 +143,7 @@ int main(int argc, char *argv[]) {
         }
       }
     }
+
     if (SHOWDIVERGENCE) {
       char d[5];
       for (int i = 0; i < sim.grid.height; i++) {
@@ -102,6 +161,7 @@ int main(int argc, char *argv[]) {
     DrawText(fps_str, 10, 10, 30, WHITE);
     EndDrawing();
   }
+
   destroy_sim(&sim);
   CloseWindow();
   return 1;

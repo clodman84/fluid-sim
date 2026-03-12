@@ -1,1 +1,1 @@
-gcc main.c flip.c -o bin/flip -lraylib -lm
+gcc main.c flip.c -O3 -o bin/flip -lraylib -lm

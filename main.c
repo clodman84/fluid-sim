@@ -9,7 +9,7 @@
 #define SHOWPARTICLE 1
 #define SHOWGRID 0
 #define SHADEGRID 1
-#define SHOWVELOCITY 0
+#define SHOWVELOCITY 1
 #define SHOWDIVERGENCE 0
 
 int main(int argc, char *argv[]) {
@@ -22,12 +22,12 @@ int main(int argc, char *argv[]) {
   // const float fixed_dt = 1.0f / 240.0f;
   float accumulator = 0.0f;
 
-  Vector2 g = {9.8f, 9.8f};
+  Vector2 g = {0.f, 9.8f};
   Rectangle rect = {200, 100, CELL_SIZE / 20, CELL_SIZE / 20};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
 
-  for (int i = 0; i < SIMHEIGHT / 2; i++) {
+  for (int i = 0; i < SIMHEIGHT / 4; i++) {
     for (int j = SIMWIDTH / 3; j < 2 * SIMWIDTH / 3; j++) {
       fluid[i * SIMWIDTH + j] = FLUID;
     }

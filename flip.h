@@ -2,9 +2,9 @@
 #define FLIP_H
 #include <raylib.h>
 
-#define CELL_SIZE 10.0
-#define SIMWIDTH 80
-#define SIMHEIGHT 80
+#define CELL_SIZE 50
+#define SIMWIDTH 16
+#define SIMHEIGHT 16
 
 enum cell_type { AIR, FLUID };
 
@@ -41,6 +41,23 @@ typedef struct {
 typedef struct {
   ParticleSet particles;
   Grid grid;
+
+  // Scratch buffers reused between simulation steps to avoid per-frame
+  // allocations in hot paths.
+  float *u_weight;
+  float *v_weight;
+  int *particle_count;
+  float *pressure;
+  float *pressure_next;
+  float *divergence;
+  float *prev_u;
+  float *prev_v;
+
+  int *collision_next;
+  int *collision_cell_x;
+  int *collision_cell_y;
+  int collision_bucket_count;
+  int collision_particle_capacity;
 } Simulation;
 
 Simulation initiallise_simulation(int width, int height, enum cell_type *cells);

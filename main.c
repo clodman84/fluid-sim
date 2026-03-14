@@ -4,9 +4,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SCREENWIDTH 1000.0
-#define SCREENHEIGHT 1000.0
-#define SHOWPARTICLE 1
+#define SCREENWIDTH 800.0
+#define SCREENHEIGHT 800.0
+#define CELL_SIZE 10
+
+#define SHOWPARTICLE 0
 #define SHOWGRID 0
 #define SHADEGRID 1
 #define SHOWVELOCITY 0
@@ -22,7 +24,7 @@ int main(int argc, char *argv[]) {
   const float fixed_dt = 1.0f / 60.0f;
   float accumulator = 0.0f;
 
-  Vector2 g = {0.f, 9.8f};
+  Vector2 g = {0.f, 9.8};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
 

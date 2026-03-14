@@ -2,9 +2,8 @@
 #define FLIP_H
 #include <raylib.h>
 
-#define CELL_SIZE 100
-#define SIMWIDTH 8
-#define SIMHEIGHT 8
+#define SIMWIDTH 80
+#define SIMHEIGHT 80
 #define N_PARTICLES_PER_CELL 4
 #define FLIP_BLEND .95f
 #define PRESSURE_ITERS 4

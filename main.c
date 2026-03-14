@@ -6,7 +6,7 @@
 
 #define SCREENWIDTH 800.0
 #define SCREENHEIGHT 800.0
-#define SHOWPARTICLE 0
+#define SHOWPARTICLE 1
 #define SHOWGRID 0
 #define SHADEGRID 1
 #define SHOWVELOCITY 0
@@ -26,8 +26,8 @@ int main(int argc, char *argv[]) {
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
 
-  for (int i = 0; i < SIMHEIGHT / 4; i++) {
-    for (int j = SIMWIDTH / 3; j < 2 * SIMWIDTH / 3; j++) {
+  for (int i = 0; i < SIMHEIGHT; i++) {
+    for (int j = 0; j < 2 * SIMWIDTH / 3; j++) {
       fluid[i * SIMWIDTH + j] = FLUID;
     }
   }
@@ -44,8 +44,8 @@ int main(int argc, char *argv[]) {
       compute(&sim, g, fixed_dt);
       accumulator -= fixed_dt;
     }
-    // compute(&sim, g, frame_dt);
 
+    // compute(&sim, g, frame_dt);
     BeginDrawing();
     ClearBackground(BLACK);
 

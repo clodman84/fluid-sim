@@ -395,131 +395,122 @@ static void make_incompressible(Simulation *sim) {
   int height = sim->grid.height;
   int cell_count = width * height;
 
+  // Pressure is used as a visualization/debug scalar here. The
+  // incompressibility solve itself is done directly in velocity-space.
   if (!sim->pressure)
     sim->pressure = calloc(cell_count, sizeof(float));
-  if (!sim->pressure_next)
-    sim->pressure_next = calloc(cell_count, sizeof(float));
-  if (!sim->divergence)
-    sim->divergence = calloc(cell_count, sizeof(float));
-  if (!sim->pressure || !sim->pressure_next || !sim->divergence)
-    return;
+  if (sim->pressure)
+    memset(sim->pressure, 0, cell_count * sizeof(float));
 
-  memset(sim->pressure, 0, cell_count * sizeof(float));
-  memset(sim->pressure_next, 0, cell_count * sizeof(float));
-  memset(sim->divergence, 0, cell_count * sizeof(float));
+  // Velocity-space incompressibility solve: iteratively push face velocities so
+  // each fluid cell's divergence approaches zero.
+  for (int iter = 0; iter < PRESSURE_ITERS; iter++) {
+    for (int i = 0; i < height; i++) {
+      for (int j = 0; j < width; j++) {
+        int idx = cell_index(i, j, width);
+        Cell *cell = &sim->grid.cells[idx];
+        if (cell->type != FLUID)
+          continue;
 
-  // Build divergence field from current staggered velocities.
+        float u_l = sim->grid.u_velocities[get_u_index(i, j, width, height)];
+        float u_r =
+            sim->grid.u_velocities[get_u_index(i, j + 1, width, height)];
+        float v_b = sim->grid.v_velocities[get_v_index(i, j, width, height)];
+        float v_t =
+            sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
+
+        float divergence = (u_r - u_l) + (v_t - v_b);
+        float compression = fmaxf(0.0f, cell->density - 1.0f);
+        int interior = is_fluid_cell(&sim->grid, i, j - 1) &&
+                       is_fluid_cell(&sim->grid, i, j + 1) &&
+                       is_fluid_cell(&sim->grid, i - 1, j) &&
+                       is_fluid_cell(&sim->grid, i + 1, j);
+        float drift_term = interior ? DRIFT_COMPENSATION * compression : 0.0f;
+        divergence -= drift_term;
+
+        divergence *= OVERRELAXATION;
+
+        float face_count = 0.0f;
+        if (j > 0)
+          face_count += 1.0f;
+        if (j < width - 1)
+          face_count += 1.0f;
+        if (i > 0)
+          face_count += 1.0f;
+        if (i < height - 1)
+          face_count += 1.0f;
+        if (face_count <= 0.0f)
+          continue;
+
+        float correction = -divergence / face_count;
+
+        // Accumulate a pressure-like potential for visualization.
+        if (sim->pressure)
+          sim->pressure[idx] += correction;
+
+        if (j > 0)
+          sim->grid.u_velocities[get_u_index(i, j, width, height)] -=
+              correction;
+        if (j < width - 1)
+          sim->grid.u_velocities[get_u_index(i, j + 1, width, height)] +=
+              correction;
+        if (i > 0)
+          sim->grid.v_velocities[get_v_index(i, j, width, height)] -=
+              correction;
+        if (i < height - 1)
+          sim->grid.v_velocities[get_v_index(i + 1, j, width, height)] +=
+              correction;
+      }
+    }
+  }
+
+  // Recenter the pressure-like field to remove arbitrary offset drift.
+  float pressure_mean = 0.0f;
+  int fluid_count = 0;
+  if (sim->pressure) {
+    for (int i = 0; i < height; i++) {
+      for (int j = 0; j < width; j++) {
+        int idx = cell_index(i, j, width);
+        if (sim->grid.cells[idx].type != FLUID)
+          continue;
+        pressure_mean += sim->pressure[idx];
+        fluid_count++;
+      }
+    }
+
+    if (fluid_count > 0) {
+      pressure_mean /= (float)fluid_count;
+      for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+          int idx = cell_index(i, j, width);
+          if (sim->grid.cells[idx].type != FLUID)
+            continue;
+          sim->pressure[idx] -= pressure_mean;
+        }
+      }
+    }
+  }
+
+  // Keep debug/visualization fields in sync.
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       int idx = cell_index(i, j, width);
       Cell *cell = &sim->grid.cells[idx];
-      if (cell->type != FLUID)
+      if (cell->type != FLUID) {
+        cell->pressure = 0.0f;
+        cell->divergence = 0.0f;
         continue;
+      }
 
       float u_l = sim->grid.u_velocities[get_u_index(i, j, width, height)];
       float u_r = sim->grid.u_velocities[get_u_index(i, j + 1, width, height)];
       float v_b = sim->grid.v_velocities[get_v_index(i, j, width, height)];
       float v_t = sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
 
-      float base_divergence = (u_r - u_l) + (v_t - v_b);
-      float compression = fmaxf(0.0f, cell->density - 1.0f);
-      int interior = is_fluid_cell(&sim->grid, i, j - 1) &&
-                     is_fluid_cell(&sim->grid, i, j + 1) &&
-                     is_fluid_cell(&sim->grid, i - 1, j) &&
-                     is_fluid_cell(&sim->grid, i + 1, j);
-      float drift_term = interior ? DRIFT_COMPENSATION * compression : 0.0f;
-
-      sim->divergence[idx] = base_divergence - drift_term;
-      cell->divergence = sim->divergence[idx];
-    }
-  }
-
-  // Jacobi pressure solve (air pressure = 0 free surface).
-  for (int iter = 0; iter < PRESSURE_ITERS; iter++) {
-    for (int i = 0; i < height; i++) {
-      for (int j = 0; j < width; j++) {
-        int idx = cell_index(i, j, width);
-        if (sim->grid.cells[idx].type != FLUID) {
-          sim->pressure_next[idx] = 0.0f;
-          continue;
-        }
-
-        float sum = 0.0f;
-        float denom = 0.0f;
-
-        // left
-        if (j > 0) {
-          denom += 1.0f;
-          int n = cell_index(i, j - 1, width);
-          if (sim->grid.cells[n].type == FLUID)
-            sum += sim->pressure[n];
-        }
-        // right
-        if (j < width - 1) {
-          denom += 1.0f;
-          int n = cell_index(i, j + 1, width);
-          if (sim->grid.cells[n].type == FLUID)
-            sum += sim->pressure[n];
-        }
-        // bottom
-        if (i > 0) {
-          denom += 1.0f;
-          int n = cell_index(i - 1, j, width);
-          if (sim->grid.cells[n].type == FLUID)
-            sum += sim->pressure[n];
-        }
-        // top
-        if (i < height - 1) {
-          denom += 1.0f;
-          int n = cell_index(i + 1, j, width);
-          if (sim->grid.cells[n].type == FLUID)
-            sum += sim->pressure[n];
-        }
-
-        if (denom > 0.0f)
-          sim->pressure_next[idx] = (sum - sim->divergence[idx]) / denom;
-        else
-          sim->pressure_next[idx] = 0.0f;
-      }
-    }
-
-    float *tmp = sim->pressure;
-    sim->pressure = sim->pressure_next;
-    sim->pressure_next = tmp;
-  }
-
-  // Apply pressure gradient to faces.
-  for (int i = 0; i < height; i++) {
-    for (int j = 1; j < width; j++) {
-      int left_idx = cell_index(i, j - 1, width);
-      int right_idx = cell_index(i, j, width);
-      int u_idx = get_u_index(i, j, width, height);
-
-      int left_fluid = sim->grid.cells[left_idx].type == FLUID;
-      int right_fluid = sim->grid.cells[right_idx].type == FLUID;
-      if (!(left_fluid || right_fluid))
-        continue;
-
-      float p_left = left_fluid ? sim->pressure[left_idx] : 0.0f;
-      float p_right = right_fluid ? sim->pressure[right_idx] : 0.0f;
-      sim->grid.u_velocities[u_idx] -= (p_right - p_left);
-    }
-  }
-
-  for (int i = 1; i < height; i++) {
-    for (int j = 0; j < width; j++) {
-      int bottom_idx = cell_index(i - 1, j, width);
-      int top_idx = cell_index(i, j, width);
-      int v_idx = get_v_index(i, j, width, height);
-
-      int bottom_fluid = sim->grid.cells[bottom_idx].type == FLUID;
-      int top_fluid = sim->grid.cells[top_idx].type == FLUID;
-      if (!(bottom_fluid || top_fluid))
-        continue;
-
-      float p_bottom = bottom_fluid ? sim->pressure[bottom_idx] : 0.0f;
-      float p_top = top_fluid ? sim->pressure[top_idx] : 0.0f;
-      sim->grid.v_velocities[v_idx] -= (p_top - p_bottom);
+      float target_pressure = sim->pressure ? sim->pressure[idx] : 0.0f;
+      // Temporal smoothing reduces pressure-color shimmer.
+      cell->pressure = 0.9f * cell->pressure + 0.1f * target_pressure;
+      cell->divergence = (u_r - u_l) + (v_t - v_b);
     }
   }
 }

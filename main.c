@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SCREENWIDTH 800.0
-#define SCREENHEIGHT 800.0
+#define SCREENWIDTH 1000.0
+#define SCREENHEIGHT 1000.0
 #define SHOWPARTICLE 1
 #define SHOWGRID 0
 #define SHADEGRID 1

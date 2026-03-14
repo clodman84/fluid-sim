@@ -6,13 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N_PARTICLES_PER_CELL 4
-#define FLIP_BLEND 0.99f
-#define PRESSURE_ITERS 40
-#define BOUNDARY_DAMPING 0.0f
-#define PARTICLE_COLLISION_ITERS 2
-#define PARTICLE_RADIUS 0.25f
-#define DRIFT_COMPENSATION 1.0f
 static float random_float() { return (float)random() / (float)RAND_MAX; }
 
 static float clampf(float v, float min_v, float max_v) {
@@ -99,18 +92,26 @@ static void resolve_particle_collisions(Simulation *sim) {
   while (bucket_count < (n * 2))
     bucket_count <<= 1;
 
-  HashBucket *buckets = malloc(sizeof(HashBucket) * bucket_count);
-  int *next = malloc(sizeof(int) * n);
-  int *cell_x = malloc(sizeof(int) * n);
-  int *cell_y = malloc(sizeof(int) * n);
+  if (sim->collision_bucket_count != bucket_count || !sim->collision_next ||
+      !sim->collision_cell_x || !sim->collision_cell_y ||
+      sim->collision_particle_capacity < n) {
+    free(sim->collision_next);
+    free(sim->collision_cell_x);
+    free(sim->collision_cell_y);
 
-  if (!buckets || !next || !cell_x || !cell_y) {
-    free(buckets);
-    free(next);
-    free(cell_x);
-    free(cell_y);
-    return;
+    sim->collision_next = malloc(sizeof(int) * n);
+    sim->collision_cell_x = malloc(sizeof(int) * n);
+    sim->collision_cell_y = malloc(sizeof(int) * n);
+    sim->collision_particle_capacity = n;
+    sim->collision_bucket_count = bucket_count;
   }
+
+  if (!sim->collision_next || !sim->collision_cell_x || !sim->collision_cell_y)
+    return;
+
+  HashBucket *buckets = malloc(sizeof(HashBucket) * bucket_count);
+  if (!buckets)
+    return;
 
   for (int iter = 0; iter < PARTICLE_COLLISION_ITERS; iter++) {
     for (int i = 0; i < bucket_count; i++) {
@@ -122,18 +123,18 @@ static void resolve_particle_collisions(Simulation *sim) {
       Particle *p = &sim->particles.data[p_idx];
       int cx = (int)floorf(p->position.x * inv_cell_size);
       int cy = (int)floorf(p->position.y * inv_cell_size);
-      cell_x[p_idx] = cx;
-      cell_y[p_idx] = cy;
+      sim->collision_cell_x[p_idx] = cx;
+      sim->collision_cell_y[p_idx] = cy;
 
       int key = hash_coords(cx, cy);
       int slot = find_or_create_bucket(buckets, bucket_count, key);
-      next[p_idx] = buckets[slot].head;
+      sim->collision_next[p_idx] = buckets[slot].head;
       buckets[slot].head = p_idx;
     }
 
     for (int a_idx = 0; a_idx < n; a_idx++) {
-      int ax = cell_x[a_idx];
-      int ay = cell_y[a_idx];
+      int ax = sim->collision_cell_x[a_idx];
+      int ay = sim->collision_cell_y[a_idx];
 
       for (int oy = -1; oy <= 1; oy++) {
         for (int ox = -1; ox <= 1; ox++) {
@@ -145,10 +146,11 @@ static void resolve_particle_collisions(Simulation *sim) {
             continue;
 
           for (int b_idx = buckets[slot].head; b_idx != -1;
-               b_idx = next[b_idx]) {
+               b_idx = sim->collision_next[b_idx]) {
             if (b_idx <= a_idx)
               continue;
-            if (cell_x[b_idx] != nx || cell_y[b_idx] != ny)
+            if (sim->collision_cell_x[b_idx] != nx ||
+                sim->collision_cell_y[b_idx] != ny)
               continue;
 
             resolve_particle_pair(&sim->particles.data[a_idx],
@@ -161,9 +163,6 @@ static void resolve_particle_collisions(Simulation *sim) {
   }
 
   free(buckets);
-  free(next);
-  free(cell_x);
-  free(cell_y);
 }
 
 Simulation initiallise_simulation(int width, int height,
@@ -210,7 +209,9 @@ Simulation initiallise_simulation(int width, int height,
 
   ParticleSet p_set = {p_index, p_index, particles};
   Grid grid = {u_velocities, v_velocities, cells, width, height};
-  Simulation sim = {p_set, grid};
+  Simulation sim = {0};
+  sim.particles = p_set;
+  sim.grid = grid;
   return sim;
 }
 
@@ -219,6 +220,19 @@ void destroy_sim(Simulation *sim) {
   free(sim->grid.u_velocities);
   free(sim->grid.v_velocities);
   free(sim->particles.data);
+
+  free(sim->u_weight);
+  free(sim->v_weight);
+  free(sim->particle_count);
+  free(sim->pressure);
+  free(sim->pressure_next);
+  free(sim->divergence);
+  free(sim->prev_u);
+  free(sim->prev_v);
+
+  free(sim->collision_next);
+  free(sim->collision_cell_x);
+  free(sim->collision_cell_y);
 }
 
 static void particle_to_grid(Simulation *sim) {
@@ -227,10 +241,19 @@ static void particle_to_grid(Simulation *sim) {
   int u_count = (width + 1) * height;
   int v_count = width * (height + 1);
 
-  float *u_weight = calloc(u_count, sizeof(float));
-  float *v_weight = calloc(v_count, sizeof(float));
-  int *particle_count = calloc(width * height, sizeof(int));
+  if (!sim->u_weight)
+    sim->u_weight = calloc(u_count, sizeof(float));
+  if (!sim->v_weight)
+    sim->v_weight = calloc(v_count, sizeof(float));
+  if (!sim->particle_count)
+    sim->particle_count = calloc(width * height, sizeof(int));
 
+  if (!sim->u_weight || !sim->v_weight || !sim->particle_count)
+    return;
+
+  memset(sim->u_weight, 0, u_count * sizeof(float));
+  memset(sim->v_weight, 0, v_count * sizeof(float));
+  memset(sim->particle_count, 0, width * height * sizeof(int));
   memset(sim->grid.u_velocities, 0, u_count * sizeof(float));
   memset(sim->grid.v_velocities, 0, v_count * sizeof(float));
 
@@ -241,7 +264,7 @@ static void particle_to_grid(Simulation *sim) {
 
     int ci = (int)floorf(y);
     int cj = (int)floorf(x);
-    particle_count[cell_index(ci, cj, width)]++;
+    sim->particle_count[cell_index(ci, cj, width)]++;
 
     float u_x = x;
     float u_y = y - 0.5f;
@@ -260,7 +283,7 @@ static void particle_to_grid(Simulation *sim) {
         float w = fmaxf(0.0f, wx * wy);
         int index = get_u_index(ui, uj, width, height);
         sim->grid.u_velocities[index] += w * p->velocity.x;
-        u_weight[index] += w;
+        sim->u_weight[index] += w;
       }
     }
 
@@ -281,34 +304,30 @@ static void particle_to_grid(Simulation *sim) {
         float w = fmaxf(0.0f, wx * wy);
         int index = get_v_index(vi, vj, width, height);
         sim->grid.v_velocities[index] += w * p->velocity.y;
-        v_weight[index] += w;
+        sim->v_weight[index] += w;
       }
     }
   }
 
   for (int i = 0; i < u_count; i++) {
-    if (u_weight[i] > 0.0f)
-      sim->grid.u_velocities[i] /= u_weight[i];
+    if (sim->u_weight[i] > 0.0f)
+      sim->grid.u_velocities[i] /= sim->u_weight[i];
   }
   for (int i = 0; i < v_count; i++) {
-    if (v_weight[i] > 0.0f)
-      sim->grid.v_velocities[i] /= v_weight[i];
+    if (sim->v_weight[i] > 0.0f)
+      sim->grid.v_velocities[i] /= sim->v_weight[i];
   }
 
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       int idx = cell_index(i, j, width);
-      sim->grid.cells[idx].type = particle_count[idx] > 0 ? FLUID : AIR;
-      sim->grid.cells[idx].pressure = 0.0f;
+      sim->grid.cells[idx].type = sim->particle_count[idx] > 0 ? FLUID : AIR;
+      // sim->grid.cells[idx].pressure = 0.0f;
       sim->grid.cells[idx].density =
-          (float)particle_count[idx] / (float)N_PARTICLES_PER_CELL;
+          (float)sim->particle_count[idx] / (float)N_PARTICLES_PER_CELL;
       sim->grid.cells[idx].divergence = 0.0f;
     }
   }
-
-  free(u_weight);
-  free(v_weight);
-  free(particle_count);
 }
 
 static void add_gravity_to_grid(Simulation *sim, Vector2 a, float dt) {
@@ -376,138 +395,124 @@ static void make_incompressible(Simulation *sim) {
   int height = sim->grid.height;
   int cell_count = width * height;
 
-  float *pressure = calloc(cell_count, sizeof(float));
-  float *pressure_next = calloc(cell_count, sizeof(float));
-  float *divergence = calloc(cell_count, sizeof(float));
+  // Pressure is used as a visualization/debug scalar here. The
+  // incompressibility solve itself is done directly in velocity-space.
+  if (!sim->pressure)
+    sim->pressure = calloc(cell_count, sizeof(float));
+  if (sim->pressure)
+    memset(sim->pressure, 0, cell_count * sizeof(float));
 
-  // Build divergence field from current staggered velocities.
+  // Velocity-space incompressibility solve: iteratively push face velocities so
+  // each fluid cell's divergence approaches zero.
+  for (int iter = 0; iter < PRESSURE_ITERS; iter++) {
+    for (int i = 0; i < height; i++) {
+      for (int j = 0; j < width; j++) {
+        int idx = cell_index(i, j, width);
+        Cell *cell = &sim->grid.cells[idx];
+        if (cell->type != FLUID)
+          continue;
+
+        float u_l = sim->grid.u_velocities[get_u_index(i, j, width, height)];
+        float u_r =
+            sim->grid.u_velocities[get_u_index(i, j + 1, width, height)];
+        float v_b = sim->grid.v_velocities[get_v_index(i, j, width, height)];
+        float v_t =
+            sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
+
+        float divergence = (u_r - u_l) + (v_t - v_b);
+        float compression = fmaxf(0.0f, cell->density - 1.0f);
+        int interior = is_fluid_cell(&sim->grid, i, j - 1) &&
+                       is_fluid_cell(&sim->grid, i, j + 1) &&
+                       is_fluid_cell(&sim->grid, i - 1, j) &&
+                       is_fluid_cell(&sim->grid, i + 1, j);
+        float drift_term = interior ? DRIFT_COMPENSATION * compression : 0.0f;
+        divergence -= drift_term;
+
+        divergence *= OVERRELAXATION;
+
+        float face_count = 0.0f;
+        if (j > 0)
+          face_count += 1.0f;
+        if (j < width - 1)
+          face_count += 1.0f;
+        if (i > 0)
+          face_count += 1.0f;
+        if (i < height - 1)
+          face_count += 1.0f;
+        if (face_count <= 0.0f)
+          continue;
+
+        float correction = -divergence / face_count;
+
+        // Accumulate a pressure-like potential for visualization.
+        if (sim->pressure)
+          sim->pressure[idx] += correction;
+
+        if (j > 0)
+          sim->grid.u_velocities[get_u_index(i, j, width, height)] -=
+              correction;
+        if (j < width - 1)
+          sim->grid.u_velocities[get_u_index(i, j + 1, width, height)] +=
+              correction;
+        if (i > 0)
+          sim->grid.v_velocities[get_v_index(i, j, width, height)] -=
+              correction;
+        if (i < height - 1)
+          sim->grid.v_velocities[get_v_index(i + 1, j, width, height)] +=
+              correction;
+      }
+    }
+  }
+
+  // Recenter the pressure-like field to remove arbitrary offset drift.
+  float pressure_mean = 0.0f;
+  int fluid_count = 0;
+  if (sim->pressure) {
+    for (int i = 0; i < height; i++) {
+      for (int j = 0; j < width; j++) {
+        int idx = cell_index(i, j, width);
+        if (sim->grid.cells[idx].type != FLUID)
+          continue;
+        pressure_mean += sim->pressure[idx];
+        fluid_count++;
+      }
+    }
+
+    if (fluid_count > 0) {
+      pressure_mean /= (float)fluid_count;
+      for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+          int idx = cell_index(i, j, width);
+          if (sim->grid.cells[idx].type != FLUID)
+            continue;
+          sim->pressure[idx] -= pressure_mean;
+        }
+      }
+    }
+  }
+
+  // Keep debug/visualization fields in sync.
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       int idx = cell_index(i, j, width);
       Cell *cell = &sim->grid.cells[idx];
-      if (cell->type != FLUID)
+      if (cell->type != FLUID) {
+        cell->pressure = 0.0f;
+        cell->divergence = 0.0f;
         continue;
+      }
 
       float u_l = sim->grid.u_velocities[get_u_index(i, j, width, height)];
       float u_r = sim->grid.u_velocities[get_u_index(i, j + 1, width, height)];
       float v_b = sim->grid.v_velocities[get_v_index(i, j, width, height)];
       float v_t = sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
 
-      float base_divergence = (u_r - u_l) + (v_t - v_b);
-      float compression = fmaxf(0.0f, cell->density - 1.0f);
-      int interior = is_fluid_cell(&sim->grid, i, j - 1) &&
-                     is_fluid_cell(&sim->grid, i, j + 1) &&
-                     is_fluid_cell(&sim->grid, i - 1, j) &&
-                     is_fluid_cell(&sim->grid, i + 1, j);
-      float drift_term = interior ? DRIFT_COMPENSATION * compression : 0.0f;
-
-      divergence[idx] = base_divergence - drift_term;
-      cell->divergence = divergence[idx];
+      float target_pressure = sim->pressure ? sim->pressure[idx] : 0.0f;
+      // Temporal smoothing reduces pressure-color shimmer.
+      cell->pressure = 0.9f * cell->pressure + 0.1f * target_pressure;
+      cell->divergence = (u_r - u_l) + (v_t - v_b);
     }
   }
-
-  // Jacobi pressure solve (air pressure = 0 free surface).
-  for (int iter = 0; iter < PRESSURE_ITERS; iter++) {
-    for (int i = 0; i < height; i++) {
-      for (int j = 0; j < width; j++) {
-        int idx = cell_index(i, j, width);
-        if (sim->grid.cells[idx].type != FLUID) {
-          pressure_next[idx] = 0.0f;
-          continue;
-        }
-
-        float sum = 0.0f;
-        float denom = 0.0f;
-
-        // left
-        if (j > 0) {
-          denom += 1.0f;
-          int n = cell_index(i, j - 1, width);
-          if (sim->grid.cells[n].type == FLUID)
-            sum += pressure[n];
-        }
-        // right
-        if (j < width - 1) {
-          denom += 1.0f;
-          int n = cell_index(i, j + 1, width);
-          if (sim->grid.cells[n].type == FLUID)
-            sum += pressure[n];
-        }
-        // bottom
-        if (i > 0) {
-          denom += 1.0f;
-          int n = cell_index(i - 1, j, width);
-          if (sim->grid.cells[n].type == FLUID)
-            sum += pressure[n];
-        }
-        // top
-        if (i < height - 1) {
-          denom += 1.0f;
-          int n = cell_index(i + 1, j, width);
-          if (sim->grid.cells[n].type == FLUID)
-            sum += pressure[n];
-        }
-
-        if (denom > 0.0f)
-          pressure_next[idx] = (sum - divergence[idx]) / denom;
-        else
-          pressure_next[idx] = 0.0f;
-      }
-    }
-
-    float *tmp = pressure;
-    pressure = pressure_next;
-    pressure_next = tmp;
-  }
-
-  // Apply pressure gradient to faces.
-  for (int i = 0; i < height; i++) {
-    for (int j = 1; j < width; j++) {
-      int left_idx = cell_index(i, j - 1, width);
-      int right_idx = cell_index(i, j, width);
-      int u_idx = get_u_index(i, j, width, height);
-
-      int left_fluid = sim->grid.cells[left_idx].type == FLUID;
-      int right_fluid = sim->grid.cells[right_idx].type == FLUID;
-      if (!(left_fluid || right_fluid))
-        continue;
-
-      float p_left = left_fluid ? pressure[left_idx] : 0.0f;
-      float p_right = right_fluid ? pressure[right_idx] : 0.0f;
-      sim->grid.u_velocities[u_idx] -= (p_right - p_left);
-    }
-  }
-
-  for (int i = 1; i < height; i++) {
-    for (int j = 0; j < width; j++) {
-      int bottom_idx = cell_index(i - 1, j, width);
-      int top_idx = cell_index(i, j, width);
-      int v_idx = get_v_index(i, j, width, height);
-
-      int bottom_fluid = sim->grid.cells[bottom_idx].type == FLUID;
-      int top_fluid = sim->grid.cells[top_idx].type == FLUID;
-      if (!(bottom_fluid || top_fluid))
-        continue;
-
-      float p_bottom = bottom_fluid ? pressure[bottom_idx] : 0.0f;
-      float p_top = top_fluid ? pressure[top_idx] : 0.0f;
-      sim->grid.v_velocities[v_idx] -= (p_top - p_bottom);
-    }
-  }
-
-  enforce_boundaries(sim);
-
-  for (int i = 0; i < height; i++) {
-    for (int j = 0; j < width; j++) {
-      int idx = cell_index(i, j, width);
-      sim->grid.cells[idx].pressure =
-          sim->grid.cells[idx].type == FLUID ? pressure[idx] : 0.0f;
-    }
-    enforce_boundaries(sim);
-  }
-  free(pressure);
-  free(pressure_next);
-  free(divergence);
 }
 
 static float sample_u(const float *u, int width, int height, float x, float y) {
@@ -597,16 +602,18 @@ void compute(Simulation *sim, Vector2 a, float dt) {
 
   particle_to_grid(sim);
 
-  float *prev_u = malloc(sizeof(float) * u_count);
-  float *prev_v = malloc(sizeof(float) * v_count);
-  memcpy(prev_u, sim->grid.u_velocities, sizeof(float) * u_count);
-  memcpy(prev_v, sim->grid.v_velocities, sizeof(float) * v_count);
+  if (!sim->prev_u)
+    sim->prev_u = malloc(sizeof(float) * u_count);
+  if (!sim->prev_v)
+    sim->prev_v = malloc(sizeof(float) * v_count);
+  if (!sim->prev_u || !sim->prev_v)
+    return;
+
+  memcpy(sim->prev_u, sim->grid.u_velocities, sizeof(float) * u_count);
+  memcpy(sim->prev_v, sim->grid.v_velocities, sizeof(float) * v_count);
 
   add_gravity_to_grid(sim, a, dt);
-  enforce_boundaries(sim);
   make_incompressible(sim);
-  grid_to_particle(sim, prev_u, prev_v, dt);
+  grid_to_particle(sim, sim->prev_u, sim->prev_v, dt);
   resolve_particle_collisions(sim);
-  free(prev_u);
-  free(prev_v);
 }

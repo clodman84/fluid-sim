@@ -19,15 +19,15 @@ int main(int argc, char *argv[]) {
   int fps;
   char fps_str[10];
 
-  // const float fixed_dt = 1.0f / 240.0f;
+  const float fixed_dt = 1.0f / 60.0f;
   float accumulator = 0.0f;
 
   Vector2 g = {0.f, 9.8f};
-  Rectangle rect = {200, 100, CELL_SIZE / 20, CELL_SIZE / 20};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
-  for (int i = 0; i < SIMHEIGHT / 2; i++) {
-    for (int j = SIMWIDTH / 3; j < 2 * SIMWIDTH / 3; j++) {
+
+  for (int i = 0; i < SIMHEIGHT; i++) {
+    for (int j = 0; j < 2 * SIMWIDTH / 3; j++) {
       fluid[i * SIMWIDTH + j] = FLUID;
     }
   }
@@ -39,21 +39,22 @@ int main(int argc, char *argv[]) {
     if (frame_dt > 0.033f)
       frame_dt = 0.033f;
 
-    // accumulator += frame_dt;
-    // while (accumulator >= fixed_dt) {
-    //   compute(&sim, g, fixed_dt);
-    //   accumulator -= fixed_dt;
-    // }
-    compute(&sim, g, frame_dt);
+    accumulator += frame_dt;
+    while (accumulator >= fixed_dt) {
+      compute(&sim, g, fixed_dt);
+      accumulator -= fixed_dt;
+    }
 
+    // compute(&sim, g, frame_dt);
     BeginDrawing();
     ClearBackground(BLACK);
 
     if (SHOWPARTICLE) {
       for (int i = 0; i < sim.particles.size; i++) {
-        rect.x = sim.particles.data[i].position.x * CELL_SIZE;
-        rect.y = sim.particles.data[i].position.y * CELL_SIZE;
-        DrawPixelV((Vector2){rect.x, rect.y}, WHITE);
+        int x = sim.particles.data[i].position.x * CELL_SIZE;
+        int y = sim.particles.data[i].position.y * CELL_SIZE;
+        float radius = PARTICLE_RADIUS * CELL_SIZE;
+        DrawCircle(x, y, radius, WHITE);
       }
     }
 

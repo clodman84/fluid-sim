@@ -6,14 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N_PARTICLES_PER_CELL 4
-#define FLIP_BLEND .95f
-#define PRESSURE_ITERS 40
-#define BOUNDARY_DAMPING 0.0f
-#define PARTICLE_COLLISION_ITERS 2
-#define PARTICLE_RADIUS 0.01f
-#define DRIFT_COMPENSATION 1.0f
-
 static float random_float() { return (float)random() / (float)RAND_MAX; }
 
 static float clampf(float v, float min_v, float max_v) {
@@ -330,7 +322,7 @@ static void particle_to_grid(Simulation *sim) {
     for (int j = 0; j < width; j++) {
       int idx = cell_index(i, j, width);
       sim->grid.cells[idx].type = sim->particle_count[idx] > 0 ? FLUID : AIR;
-      sim->grid.cells[idx].pressure = 0.0f;
+      // sim->grid.cells[idx].pressure = 0.0f;
       sim->grid.cells[idx].density =
           (float)sim->particle_count[idx] / (float)N_PARTICLES_PER_CELL;
       sim->grid.cells[idx].divergence = 0.0f;

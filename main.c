@@ -6,12 +6,12 @@
 
 #define SCREENWIDTH 800.0
 #define SCREENHEIGHT 800.0
-#define CELL_SIZE 10
+#define CELL_SIZE 100
 
 #define SHOWPARTICLE 0
-#define SHOWGRID 0
+#define SHOWGRID 1
 #define SHADEGRID 1
-#define SHOWVELOCITY 0
+#define SHOWVELOCITY 1
 #define SHOWDIVERGENCE 0
 
 int main(int argc, char *argv[]) {
@@ -24,12 +24,12 @@ int main(int argc, char *argv[]) {
   const float fixed_dt = 1.0f / 60.0f;
   float accumulator = 0.0f;
 
-  Vector2 g = {0.f, 9.8};
+  Vector2 g = {0, 9.8};
   enum cell_type fluid[SIMWIDTH * SIMHEIGHT];
   memset(fluid, AIR, sizeof(fluid));
 
   for (int i = 0; i < SIMHEIGHT; i++) {
-    for (int j = 0; j < 2 * SIMWIDTH / 3; j++) {
+    for (int j = 0; j < SIMWIDTH / 2; j++) {
       fluid[i * SIMWIDTH + j] = FLUID;
     }
   }
@@ -78,11 +78,12 @@ int main(int argc, char *argv[]) {
         max_abs_pressure = 0.001f;
 
       // Exponential smoothing avoids frame-to-frame flicker.
-      display_abs_pressure =
-          display_abs_pressure * 0.95f + max_abs_pressure * 0.05f;
-      if (display_abs_pressure < 0.001f)
-        display_abs_pressure = 0.001f;
+      // display_abs_pressure =
+      //     display_abs_pressure * 0.95f + max_abs_pressure * 0.05f;
+      // if (display_abs_pressure < 0.001f)
+      //   display_abs_pressure = 0.001f;
 
+      display_abs_pressure = max_abs_pressure;
       for (int i = 0; i < sim.grid.height; i++) {
         for (int j = 0; j < sim.grid.width; j++) {
           int idx = i * sim.grid.width + j;
@@ -116,14 +117,16 @@ int main(int argc, char *argv[]) {
           int u_x1 = j * CELL_SIZE;
           int u_x2 =
               u_x1 +
-              sim.grid.u_velocities[get_u_index(i, j, SIMWIDTH, SIMHEIGHT)];
+              sim.grid.u_velocities[get_u_index(i, j, SIMWIDTH, SIMHEIGHT)] *
+                  (CELL_SIZE / 4);
           int u_y = (i * CELL_SIZE) + CELL_SIZE / 2;
 
           int v_x = (j * CELL_SIZE) + CELL_SIZE / 2;
           int v_y1 = i * CELL_SIZE;
           int v_y2 =
               v_y1 +
-              sim.grid.v_velocities[get_v_index(i, j, SIMWIDTH, SIMHEIGHT)];
+              sim.grid.v_velocities[get_v_index(i, j, SIMWIDTH, SIMHEIGHT)] *
+                  (CELL_SIZE / 4);
           DrawLine(u_x1, u_y, u_x2, u_y, RED);
           DrawLine(v_x, v_y1, v_x, v_y2, RED);
         }

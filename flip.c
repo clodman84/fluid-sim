@@ -369,21 +369,6 @@ static void add_gravity_to_grid(Simulation *sim, Vector2 a, float dt) {
   }
 }
 
-static void enforce_boundaries(Simulation *sim) {
-  int width = sim->grid.width;
-  int height = sim->grid.height;
-
-  for (int i = 0; i < height; i++) {
-    sim->grid.u_velocities[get_u_index(i, 0, width, height)] = 0.0f;
-    sim->grid.u_velocities[get_u_index(i, width, width, height)] = 0.0f;
-  }
-
-  for (int j = 0; j < width; j++) {
-    sim->grid.v_velocities[get_v_index(0, j, width, height)] = 0.0f;
-    sim->grid.v_velocities[get_v_index(height, j, width, height)] = 0.0f;
-  }
-}
-
 static int is_fluid_cell(Grid *grid, int i, int j) {
   if (i < 0 || i >= grid->height || j < 0 || j >= grid->width)
     return 0;
@@ -597,8 +582,8 @@ static void grid_to_particle(Simulation *sim, const float *prev_u,
 }
 
 void compute(Simulation *sim, Vector2 a, float dt) {
-  int u_count = (sim->grid.width + 1) * sim->grid.height;
-  int v_count = sim->grid.width * (sim->grid.height + 1);
+  const int u_count = (sim->grid.width + 1) * sim->grid.height;
+  const int v_count = sim->grid.width * (sim->grid.height + 1);
 
   particle_to_grid(sim);
 

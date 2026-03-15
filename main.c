@@ -8,11 +8,11 @@
 #define SCREENHEIGHT 800.0
 #define CELL_SIZE 100
 
-#define SHOWPARTICLE 0
+#define SHOWPARTICLE 1
 #define SHOWGRID 1
 #define SHADEGRID 1
 #define SHOWVELOCITY 1
-#define SHOWDIVERGENCE 0
+#define SHOWDIVERGENCE 1
 
 int main(int argc, char *argv[]) {
   InitWindow(SCREENWIDTH, SCREENHEIGHT, "Fluid Sim");

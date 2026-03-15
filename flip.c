@@ -389,7 +389,7 @@ static void make_incompressible(Simulation *sim) {
 
   // Velocity-space incompressibility solve: iteratively push face velocities so
   // each fluid cell's divergence approaches zero.
-  for (int iter = 0; iter < PRESSURE_ITERS; iter++) {
+  for (int iter = 0; iter < GAUSS_ITERS; iter++) {
     for (int i = 0; i < height; i++) {
       for (int j = 0; j < width; j++) {
         int idx = cell_index(i, j, width);

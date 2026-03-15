@@ -5,8 +5,8 @@
 #define SIMWIDTH 8
 #define SIMHEIGHT 8
 #define N_PARTICLES_PER_CELL 4
-#define FLIP_BLEND .95f
-#define PRESSURE_ITERS 4
+#define FLIP_BLEND .1f
+#define GAUSS_ITERS 4
 #define BOUNDARY_DAMPING -1.0f
 #define PARTICLE_COLLISION_ITERS 2
 #define PARTICLE_RADIUS .25f
@@ -49,8 +49,6 @@ typedef struct {
   ParticleSet particles;
   Grid grid;
 
-  // Scratch buffers reused between simulation steps to avoid per-frame
-  // allocations in hot paths.
   float *u_weight;
   float *v_weight;
   int *particle_count;

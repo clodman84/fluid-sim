@@ -16,6 +16,19 @@ static float clampf(float v, float min_v, float max_v) {
   return v;
 }
 
+SimParams default_sim_params(void) {
+  return (SimParams){
+      .particles_per_cell = N_PARTICLES_PER_CELL,
+      .flip_blend = FLIP_BLEND,
+      .gauss_iters = GAUSS_ITERS,
+      .boundary_damping = BOUNDARY_DAMPING,
+      .particle_collision_iters = PARTICLE_COLLISION_ITERS,
+      .particle_radius = PARTICLE_RADIUS,
+      .drift_compensation = DRIFT_COMPENSATION,
+      .overrelaxation = OVERRELAXATION,
+  };
+}
+
 static void resolve_particle_pair(Particle *a, Particle *b, float min_dist,
                                   int width, int height) {
   Vector2 delta = Vector2Subtract(b->position, a->position);
@@ -80,12 +93,13 @@ static int find_bucket(const HashBucket *buckets, int bucket_count, int key) {
   }
 }
 
-static void resolve_particle_collisions(Simulation *sim) {
+static void resolve_particle_collisions(Simulation *sim,
+                                        const SimParams *params) {
   int n = sim->particles.size;
   if (n <= 1)
     return;
 
-  float min_dist = 2.0f * PARTICLE_RADIUS;
+  float min_dist = 2.0f * params->particle_radius;
   float inv_cell_size = 1.0f / min_dist;
 
   int bucket_count = 1;
@@ -113,7 +127,7 @@ static void resolve_particle_collisions(Simulation *sim) {
   if (!buckets)
     return;
 
-  for (int iter = 0; iter < PARTICLE_COLLISION_ITERS; iter++) {
+  for (int iter = 0; iter < params->particle_collision_iters; iter++) {
     for (int i = 0; i < bucket_count; i++) {
       buckets[i].key = INT_MIN;
       buckets[i].head = -1;
@@ -166,7 +180,8 @@ static void resolve_particle_collisions(Simulation *sim) {
 }
 
 Simulation initiallise_simulation(int width, int height,
-                                  enum cell_type *initial_config) {
+                                  enum cell_type *initial_config,
+                                  const SimParams *params) {
   int n_cells = 0;
   for (int i = 0; i < width * height; i++) {
     if (initial_config[i] == FLUID)
@@ -174,13 +189,13 @@ Simulation initiallise_simulation(int width, int height,
   }
 
   Particle *particles =
-      malloc(sizeof(Particle) * n_cells * N_PARTICLES_PER_CELL);
+      malloc(sizeof(Particle) * n_cells * params->particles_per_cell);
 
   int p_index = 0;
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       if (initial_config[i * width + j] == FLUID) {
-        for (int n = 0; n < N_PARTICLES_PER_CELL; n++) {
+        for (int n = 0; n < params->particles_per_cell; n++) {
           Particle p = {{j + random_float(), i + random_float()}, {0.0f, 0.0f}};
           particles[p_index++] = p;
         }
@@ -235,7 +250,7 @@ void destroy_sim(Simulation *sim) {
   free(sim->collision_cell_y);
 }
 
-static void particle_to_grid(Simulation *sim) {
+static void particle_to_grid(Simulation *sim, const SimParams *params) {
   int width = sim->grid.width;
   int height = sim->grid.height;
   int u_count = (width + 1) * height;
@@ -324,7 +339,7 @@ static void particle_to_grid(Simulation *sim) {
       sim->grid.cells[idx].type = sim->particle_count[idx] > 0 ? FLUID : AIR;
       // sim->grid.cells[idx].pressure = 0.0f;
       sim->grid.cells[idx].density =
-          (float)sim->particle_count[idx] / (float)N_PARTICLES_PER_CELL;
+          (float)sim->particle_count[idx] / (float)params->particles_per_cell;
       sim->grid.cells[idx].divergence = 0.0f;
     }
   }
@@ -375,7 +390,7 @@ static int is_fluid_cell(Grid *grid, int i, int j) {
   return grid->cells[cell_index(i, j, grid->width)].type == FLUID;
 }
 
-static void make_incompressible(Simulation *sim) {
+static void make_incompressible(Simulation *sim, const SimParams *params) {
   int width = sim->grid.width;
   int height = sim->grid.height;
   int cell_count = width * height;
@@ -389,7 +404,7 @@ static void make_incompressible(Simulation *sim) {
 
   // Velocity-space incompressibility solve: iteratively push face velocities so
   // each fluid cell's divergence approaches zero.
-  for (int iter = 0; iter < GAUSS_ITERS; iter++) {
+  for (int iter = 0; iter < params->gauss_iters; iter++) {
     for (int i = 0; i < height; i++) {
       for (int j = 0; j < width; j++) {
         int idx = cell_index(i, j, width);
@@ -410,10 +425,11 @@ static void make_incompressible(Simulation *sim) {
                        is_fluid_cell(&sim->grid, i, j + 1) &&
                        is_fluid_cell(&sim->grid, i - 1, j) &&
                        is_fluid_cell(&sim->grid, i + 1, j);
-        float drift_term = interior ? DRIFT_COMPENSATION * compression : 0.0f;
+        float drift_term =
+            interior ? params->drift_compensation * compression : 0.0f;
         divergence -= drift_term;
 
-        divergence *= OVERRELAXATION;
+        divergence *= params->overrelaxation;
 
         float face_count = 0.0f;
         if (j > 0)
@@ -541,7 +557,8 @@ static float sample_v(const float *v, int width, int height, float x, float y) {
 }
 
 static void grid_to_particle(Simulation *sim, const float *prev_u,
-                             const float *prev_v, float dt) {
+                             const float *prev_v, float dt,
+                             const SimParams *params) {
   int width = sim->grid.width;
   int height = sim->grid.height;
 
@@ -560,32 +577,32 @@ static void grid_to_particle(Simulation *sim, const float *prev_u,
     Vector2 flip = {p->velocity.x + (pic_u - old_u),
                     p->velocity.y + (pic_v - old_v)};
 
-    p->velocity = Vector2Lerp(pic, flip, FLIP_BLEND);
+    p->velocity = Vector2Lerp(pic, flip, params->flip_blend);
     p->position = Vector2Add(p->position, Vector2Scale(p->velocity, dt));
 
     if (p->position.x <= 0.0f) {
       p->position.x = 0.001f;
-      p->velocity.x *= BOUNDARY_DAMPING;
+      p->velocity.x *= params->boundary_damping;
     } else if (p->position.x >= width) {
       p->position.x = width - 0.001f;
-      p->velocity.x *= BOUNDARY_DAMPING;
+      p->velocity.x *= params->boundary_damping;
     }
 
     if (p->position.y <= 0.0f) {
       p->position.y = 0.001f;
-      p->velocity.y *= BOUNDARY_DAMPING;
+      p->velocity.y *= params->boundary_damping;
     } else if (p->position.y >= height) {
       p->position.y = height - 0.001f;
-      p->velocity.y *= BOUNDARY_DAMPING;
+      p->velocity.y *= params->boundary_damping;
     }
   }
 }
 
-void compute(Simulation *sim, Vector2 a, float dt) {
+void compute(Simulation *sim, Vector2 a, float dt, const SimParams *params) {
   const int u_count = (sim->grid.width + 1) * sim->grid.height;
   const int v_count = sim->grid.width * (sim->grid.height + 1);
 
-  particle_to_grid(sim);
+  particle_to_grid(sim, params);
 
   if (!sim->prev_u)
     sim->prev_u = malloc(sizeof(float) * u_count);
@@ -598,7 +615,7 @@ void compute(Simulation *sim, Vector2 a, float dt) {
   memcpy(sim->prev_v, sim->grid.v_velocities, sizeof(float) * v_count);
 
   add_gravity_to_grid(sim, a, dt);
-  make_incompressible(sim);
-  grid_to_particle(sim, sim->prev_u, sim->prev_v, dt);
-  resolve_particle_collisions(sim);
+  make_incompressible(sim, params);
+  grid_to_particle(sim, sim->prev_u, sim->prev_v, dt, params);
+  resolve_particle_collisions(sim, params);
 }

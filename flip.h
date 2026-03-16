@@ -5,13 +5,24 @@
 #define SIMWIDTH 8
 #define SIMHEIGHT 8
 #define N_PARTICLES_PER_CELL 4
-#define FLIP_BLEND .1f
+#define FLIP_BLEND .95f
 #define GAUSS_ITERS 4
 #define BOUNDARY_DAMPING -1.0f
 #define PARTICLE_COLLISION_ITERS 2
 #define PARTICLE_RADIUS .25f
 #define DRIFT_COMPENSATION 1.0f
 #define OVERRELAXATION 1.9f
+
+typedef struct {
+  int particles_per_cell;
+  float flip_blend;
+  int gauss_iters;
+  float boundary_damping;
+  int particle_collision_iters;
+  float particle_radius;
+  float drift_compensation;
+  float overrelaxation;
+} SimParams;
 
 enum cell_type { AIR, FLUID };
 
@@ -65,8 +76,10 @@ typedef struct {
   int collision_particle_capacity;
 } Simulation;
 
-Simulation initiallise_simulation(int width, int height, enum cell_type *cells);
-void compute(Simulation *sim, Vector2 a, float dt);
+SimParams default_sim_params(void);
+Simulation initiallise_simulation(int width, int height, enum cell_type *cells,
+                                  const SimParams *params);
+void compute(Simulation *sim, Vector2 a, float dt, const SimParams *params);
 void destroy_sim(Simulation *sim);
 
 static inline int get_u_index(int i, int j, int width, int height) {

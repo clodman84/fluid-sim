@@ -420,15 +420,16 @@ static void make_incompressible(Simulation *sim, const SimParams *params) {
             sim->grid.v_velocities[get_v_index(i + 1, j, width, height)];
 
         float divergence = (u_r - u_l) + (v_t - v_b);
+
         float compression = fmaxf(0.0f, cell->density - 1.0f);
         int interior = is_fluid_cell(&sim->grid, i, j - 1) &&
                        is_fluid_cell(&sim->grid, i, j + 1) &&
                        is_fluid_cell(&sim->grid, i - 1, j) &&
                        is_fluid_cell(&sim->grid, i + 1, j);
+
         float drift_term =
             interior ? params->drift_compensation * compression : 0.0f;
         divergence -= drift_term;
-
         divergence *= params->overrelaxation;
 
         float face_count = 0.0f;
